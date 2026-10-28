@@ -1,0 +1,9 @@
+services:
+  web:
+    build: .
+    container_name: equiptrak-web
+    ports:
+      - "4200:4200"
+    volumes:
+      - .:/app
+      - /app/node_modules
