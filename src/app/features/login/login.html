@@ -1,62 +1,96 @@
-<main class="flex min-h-screen items-center justify-center bg-slate-100 p-4">
-  <section class="w-full max-w-sm rounded-xl bg-white p-8 shadow">
-    <h1 class="text-2xl font-semibold text-slate-900">EquipTrak</h1>
-    <p class="mt-1 text-sm text-slate-600">Acesse sua conta para continuar.</p>
+<main class="grid min-h-screen lg:grid-cols-[1.15fr_1fr]">
+  <aside
+    class="grain stripes relative hidden overflow-hidden border-r border-border bg-topbar p-12 lg:flex lg:flex-col lg:justify-between"
+  >
+    <app-brand-logo />
 
-    @if (sessaoExpirada) {
-      <p role="status" class="mt-4 rounded bg-amber-50 p-3 text-sm text-amber-800">
-        Sua sessão expirou. Entre novamente.
+    <div class="relative">
+      <app-mascote [size]="220" svgClass="absolute -right-6 -top-56 rotate-6 opacity-90" />
+      <h1 class="font-display text-[104px] leading-[0.88]">
+        Cada<br />equipamento,<br /><span class="text-accent-text">rastreado.</span>
+      </h1>
+      <div class="mt-6 h-0.5 w-16 bg-accent"></div>
+      <p class="mt-4 max-w-md text-muted-foreground">
+        Solicitação, aprovação, retirada e devolução em um só lugar — do notebook ao adaptador HDMI.
       </p>
-    }
+    </div>
 
-    <form [formGroup]="form" (ngSubmit)="entrar()" novalidate class="mt-6 space-y-4">
-      <div>
-        <label for="email" class="block text-sm font-medium text-slate-700">E-mail</label>
-        <input
-          id="email"
-          type="email"
-          formControlName="email"
-          autocomplete="username"
-          [attr.aria-invalid]="invalido('email')"
-          class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none"
-        />
-        @if (invalido('email')) {
-          <p class="mt-1 text-xs text-red-600">
-            {{
-              form.controls.email.hasError('required')
-                ? 'E-mail é obrigatório'
-                : 'E-mail em formato inválido'
-            }}
-          </p>
-        }
+    <p class="font-mono text-xs text-muted-foreground">NB-0001 · PJ-0001 · KT-0001 · AD-0001</p>
+  </aside>
+
+  <section class="flex items-center justify-center px-5 py-12">
+    <div class="w-full max-w-sm">
+      <div class="mb-8 lg:hidden">
+        <app-brand-logo />
       </div>
 
-      <div>
-        <label for="senha" class="block text-sm font-medium text-slate-700">Senha</label>
-        <input
-          id="senha"
-          type="password"
-          formControlName="senha"
-          autocomplete="current-password"
-          [attr.aria-invalid]="invalido('senha')"
-          class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none"
-        />
-        @if (invalido('senha')) {
-          <p class="mt-1 text-xs text-red-600">Senha é obrigatória</p>
-        }
-      </div>
+      <h2 class="font-display text-4xl leading-none">Entrar</h2>
+      <div class="mt-2 h-0.5 w-10 bg-accent"></div>
+      <p class="mt-3 text-sm text-muted-foreground">Acesse com seu e-mail corporativo.</p>
 
-      @if (erro(); as mensagem) {
-        <p role="alert" class="rounded bg-red-50 p-3 text-sm text-red-700">{{ mensagem }}</p>
+      @if (sessaoExpirada) {
+        <p
+          role="status"
+          class="mt-4 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
+        >
+          Sua sessão expirou. Entre novamente.
+        </p>
       }
 
-      <button
-        type="submit"
-        [disabled]="carregando()"
-        class="w-full rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+      <form
+        [formGroup]="form"
+        (ngSubmit)="entrar()"
+        novalidate
+        class="chamfer mt-6 space-y-4 rounded-md border border-border bg-surface p-5"
       >
-        {{ carregando() ? 'Entrando...' : 'Entrar' }}
-      </button>
-    </form>
+        @if (erro(); as mensagem) {
+          <div role="alert" class="rounded-md border border-danger/40 bg-danger/10 p-3 text-danger">
+            <p class="text-sm font-semibold">{{ mensagem }}</p>
+            <p class="mt-1 text-sm text-foreground/80">Confira os dados e tente novamente.</p>
+          </div>
+        }
+
+        <app-campo
+          [id]="'email'"
+          label="E-mail"
+          [erro]="
+            invalido('email')
+              ? form.controls.email.hasError('required')
+                ? 'E-mail é obrigatório'
+                : 'E-mail em formato inválido'
+              : undefined
+          "
+        >
+          <input
+            id="email"
+            type="email"
+            formControlName="email"
+            autocomplete="username"
+            placeholder="nome@empresa.com"
+            appInput
+            [invalido]="invalido('email')"
+          />
+        </app-campo>
+
+        <app-campo
+          [id]="'senha'"
+          label="Senha"
+          [erro]="invalido('senha') ? 'Senha é obrigatória' : undefined"
+        >
+          <input
+            id="senha"
+            type="password"
+            formControlName="senha"
+            autocomplete="current-password"
+            appInput
+            [invalido]="invalido('senha')"
+          />
+        </app-campo>
+
+        <button type="submit" appBotao extraClass="w-full min-h-11" [disabled]="carregando()">
+          {{ carregando() ? 'Entrando…' : 'Entrar' }}
+        </button>
+      </form>
+    </div>
   </section>
 </main>
