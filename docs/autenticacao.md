@@ -2,7 +2,7 @@
 
 Implementa o login do EquipTrak sobre a API de autenticação do backend (JWT, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`). O contrato completo está em `docs/auth-api.md` do repositório do backend.
 
-> Origem: contrato do backend (`backend-auth`). Os critérios do ticket SCRUM-20 e do Figma ainda não foram conferidos; ver "Pendências".
+> Origem: contrato do backend (`backend-auth`). Visual da tela de login conforme o Guia de Design e a versão de homologação (SCRUM-20/SCRUM-23); recuperação de senha conforme SCRUM-24.
 
 ## Estrutura
 
@@ -13,16 +13,20 @@ Implementa o login do EquipTrak sobre a API de autenticação do backend (JWT, `
 | `src/app/core/auth/auth.interceptor.ts` | anexa `Authorization: Bearer`; em 401 limpa a sessão e vai a `/login` |
 | `src/app/core/auth/auth.guard.ts` | `authGuard` (rotas privadas) e `guestGuard` (tela de login) |
 | `src/app/core/http/mensagem-erro.ts` | converte erros HTTP no texto exibido ao usuário |
-| `src/app/features/login/` | tela de login (formulário reativo, Tailwind) |
-| `src/app/features/home/` | página provisória com nome, perfil e botão **Sair** |
+| `src/app/core/auth/senha.service.ts` | pedido de recuperação e redefinição de senha (endpoints propostos, ver `api.md`) |
+| `src/app/features/login/` | tela de login (formulário reativo, visual do Guia de Design) |
+| `src/app/features/esqueci-senha/` | pede o link de recuperação; mesma mensagem exista ou não o e-mail |
+| `src/app/features/redefinir-senha/` | nova senha (8–72 caracteres) + confirmação, a partir do `?token=` do e-mail |
+| `src/app/pages/painel/` | área logada; o perfil (`SOLICITANTE` × demais) define a visão. **Sair** fica no menu do usuário |
 
 ## Fluxo
 
 1. Usuário anônimo em qualquer rota privada é enviado a `/login?returnUrl=<rota>`.
-2. O login válido guarda token, expiração e usuário; navega para `returnUrl` (só caminhos internos) ou `/`.
+2. O login válido guarda token, expiração e usuário; navega para `returnUrl` (só caminhos internos) ou `/` (que abre `/painel`).
 3. Toda chamada a `API_URL` leva o Bearer token. Token vencido é descartado localmente antes de usar.
 4. Um 401 em rota protegida (token expirado ou revogado) limpa a sessão e abre `/login?sessaoExpirada=true`.
 5. **Sair** chama `/auth/logout` para revogar o token e limpa a sessão local mesmo se a chamada falhar.
+6. **Esqueci minha senha** → `/esqueci-senha` → e-mail com link → `/redefinir-senha?token=…` → volta ao login com aviso "Senha alterada".
 
 ## Decisões
 
@@ -51,6 +55,6 @@ Unitários, com `HttpTestingController`: serviço (login, 401, restauração e e
 
 ## Pendências
 
-- Conferir critérios do SCRUM-20 e subtarefas, do doc de codificação e do Figma (sem acesso ao Atlassian na hora da implementação). Ajustar visual e textos conforme o Figma.
+- Backend implementar `/auth/esqueci-senha` e `/auth/redefinir-senha` (contrato em `api.md`).
 - Teste ao vivo contra o backend (exige Docker/MySQL e Gradle) e fluxo no navegador.
 - Backend sem rate limit de login e sem limpeza de `sessao_token` (ver doc do backend).
