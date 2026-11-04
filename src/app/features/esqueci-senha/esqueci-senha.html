@@ -1,0 +1,46 @@
+<main class="flex min-h-screen items-center justify-center px-5 py-12">
+  <div class="w-full max-w-sm">
+    <div class="mb-8"><app-brand-logo /></div>
+
+    <h1 class="font-display text-4xl leading-none">Recuperar senha</h1>
+    <div class="mt-2 h-0.5 w-10 bg-accent"></div>
+    <p class="mt-3 text-sm text-muted-foreground">
+      Informe seu e-mail corporativo e enviaremos um link para criar uma nova senha.
+    </p>
+
+    @if (enviado()) {
+      <div
+        role="status"
+        class="chamfer mt-6 rounded-md border border-success/40 bg-success/10 p-5 text-sm text-success"
+      >
+        Se o e-mail estiver cadastrado, você receberá um link para redefinir a senha.
+      </div>
+    } @else {
+      <form
+        [formGroup]="form"
+        (ngSubmit)="enviar()"
+        novalidate
+        class="chamfer mt-6 space-y-4 rounded-md border border-border bg-surface p-5"
+      >
+        <app-campo [id]="'email'" label="E-mail" [erro]="erroEmail()">
+          <input
+            id="email"
+            type="email"
+            formControlName="email"
+            autocomplete="email"
+            placeholder="nome@empresa.com"
+            appInput
+            [invalido]="!!erroEmail()"
+          />
+        </app-campo>
+        <button type="submit" appBotao extraClass="w-full min-h-11" [disabled]="enviando()">
+          {{ enviando() ? 'Enviando…' : 'Enviar link' }}
+        </button>
+      </form>
+    }
+
+    <p class="mt-6 text-center text-xs">
+      <a routerLink="/login" class="text-accent-text hover:underline">Voltar ao login</a>
+    </p>
+  </div>
+</main>

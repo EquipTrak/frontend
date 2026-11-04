@@ -21,6 +21,8 @@ describe('App & EquipTrackService', () => {
     const porCaminho = Object.fromEntries(routes.map((r) => [r.path, r]));
     expect(porCaminho['painel'].canActivate?.length).toBe(1);
     expect(porCaminho['login'].canActivate?.length).toBe(1);
+    expect(porCaminho['esqueci-senha'].canActivate?.length).toBe(1);
+    expect(porCaminho['redefinir-senha'].canActivate?.length).toBe(1);
     expect(porCaminho[''].redirectTo).toBe('painel');
   });
 

@@ -1,0 +1,63 @@
+<main class="flex min-h-screen items-center justify-center px-5 py-12">
+  <div class="w-full max-w-sm">
+    <div class="mb-8"><app-brand-logo /></div>
+
+    <h1 class="font-display text-4xl leading-none">Nova senha</h1>
+    <div class="mt-2 h-0.5 w-10 bg-accent"></div>
+
+    @if (!token) {
+      <div
+        role="alert"
+        class="mt-6 rounded-md border border-danger/40 bg-danger/10 p-4 text-sm text-danger"
+      >
+        Link inválido ou incompleto. Peça um novo link de recuperação.
+      </div>
+      <p class="mt-6 text-center text-xs">
+        <a routerLink="/esqueci-senha" class="text-accent-text hover:underline">Pedir novo link</a>
+      </p>
+    } @else {
+      <p class="mt-3 text-sm text-muted-foreground">Crie uma senha com 8 a 72 caracteres.</p>
+      <form
+        [formGroup]="form"
+        (ngSubmit)="salvar()"
+        novalidate
+        class="chamfer mt-6 space-y-4 rounded-md border border-border bg-surface p-5"
+      >
+        @if (erro(); as mensagem) {
+          <div
+            role="alert"
+            class="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-danger"
+          >
+            {{ mensagem }}
+          </div>
+        }
+        <app-campo [id]="'novaSenha'" label="Nova senha" [erro]="erroNova()">
+          <input
+            id="novaSenha"
+            type="password"
+            formControlName="novaSenha"
+            autocomplete="new-password"
+            appInput
+            [invalido]="!!erroNova()"
+          />
+        </app-campo>
+        <app-campo [id]="'confirmacao'" label="Confirmar senha" [erro]="erroConfirmacao()">
+          <input
+            id="confirmacao"
+            type="password"
+            formControlName="confirmacao"
+            autocomplete="new-password"
+            appInput
+            [invalido]="!!erroConfirmacao()"
+          />
+        </app-campo>
+        <button type="submit" appBotao extraClass="w-full min-h-11" [disabled]="salvando()">
+          {{ salvando() ? 'Salvando…' : 'Salvar nova senha' }}
+        </button>
+      </form>
+      <p class="mt-6 text-center text-xs">
+        <a routerLink="/login" class="text-accent-text hover:underline">Voltar ao login</a>
+      </p>
+    }
+  </div>
+</main>

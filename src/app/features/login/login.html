@@ -37,6 +37,15 @@
         </p>
       }
 
+      @if (senhaRedefinida) {
+        <p
+          role="status"
+          class="mt-4 rounded-md border border-success/40 bg-success/10 p-3 text-sm text-success"
+        >
+          Senha alterada. Entre com a nova senha.
+        </p>
+      }
+
       <form
         [formGroup]="form"
         (ngSubmit)="entrar()"
@@ -90,6 +99,12 @@
         <button type="submit" appBotao extraClass="w-full min-h-11" [disabled]="carregando()">
           {{ carregando() ? 'Entrando…' : 'Entrar' }}
         </button>
+
+        <p class="text-center text-xs">
+          <a routerLink="/esqueci-senha" class="text-accent-text hover:underline">
+            Esqueci minha senha
+          </a>
+        </p>
       </form>
     </div>
   </section>

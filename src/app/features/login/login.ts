@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Title } from '@angular/platform-browser';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { BotaoDirective } from '../../components/ui/botao.component';
 import { CampoComponent, InputDirective } from '../../components/ui/campo.component';
 import { BrandLogoComponent, MascoteComponent } from '../../components/ui/mascote-logo.component';
@@ -12,6 +12,7 @@ import { mensagemDeErro } from '../../core/http/mensagem-erro';
   selector: 'app-login',
   imports: [
     ReactiveFormsModule,
+    RouterLink,
     BrandLogoComponent,
     MascoteComponent,
     CampoComponent,
@@ -33,6 +34,7 @@ export class Login {
   protected readonly carregando = signal(false);
   protected readonly erro = signal<string | null>(null);
   protected readonly sessaoExpirada = this.route.snapshot.queryParamMap.has('sessaoExpirada');
+  protected readonly senhaRedefinida = this.route.snapshot.queryParamMap.has('senhaRedefinida');
 
   constructor() {
     inject(Title).setTitle('Entrar — EquipTrack');
