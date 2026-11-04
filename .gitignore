@@ -12,7 +12,8 @@ npm-debug.log
 yarn-error.log
 
 # IDEs and editors
-.idea/
+.idea/*
+!.idea/runConfigurations/
 .project
 .classpath
 .c9/
@@ -21,12 +22,6 @@ yarn-error.log
 *.sublime-workspace
 
 # Visual Studio Code
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/mcp.json
 .history/*
 
 # Miscellaneous
@@ -43,4 +38,3 @@ __screenshots__/
 .DS_Store
 Thumbs.db
 *.iml
-.idea/
