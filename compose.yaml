@@ -1,9 +1,22 @@
 services:
+  # Desenvolvimento: http://localhost:4200 (hot reload)
   web:
-    build: .
+    build:
+      context: .
+      target: dev
     container_name: equiptrak-web
     ports:
       - "4200:4200"
     volumes:
       - .:/app
       - /app/node_modules
+
+  # Produção local: docker compose --profile prod up --build  ->  http://localhost:8081
+  web-prod:
+    profiles: [prod]
+    build:
+      context: .
+      target: prod
+    container_name: equiptrak-web-prod
+    ports:
+      - "8081:80"
