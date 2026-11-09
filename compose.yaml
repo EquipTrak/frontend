@@ -1,0 +1,9 @@
+services:
+  web:
+    build: .
+    container_name: equiptrack-frontend
+    ports:
+      - "4200:4200"
+    volumes:
+      - .:/app
+      - /app/node_modules
