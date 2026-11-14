@@ -15,7 +15,6 @@ import {
   AbaNavegacao,
   Equipamento,
   EstadoTela,
-  PerfilUsuario,
   Solicitacao,
 } from '../../models/equiptrack.models';
 import { EquipTrackService } from '../../services/equiptrack.service';
@@ -210,18 +209,6 @@ export class BuscaRapidaComponent implements AfterViewInit {
             <option value="erro">Estado: erro</option>
           </select>
 
-          <select
-            appSelect
-            aria-label="Perfil (protótipo)"
-            extraClass="hidden !min-h-8 w-auto py-0 text-xs sm:block"
-            [ngModel]="state.perfil()"
-            (ngModelChange)="aoMudarPerfil($event)"
-          >
-            <option value="operador">Operador</option>
-            <option value="rafael">Solicitante · Rafael</option>
-            <option value="beatriz">Solicitante · Beatriz</option>
-          </select>
-
           <div class="relative hidden sm:block">
             <button
               type="button"
@@ -244,7 +231,7 @@ export class BuscaRapidaComponent implements AfterViewInit {
               >
                 <p class="px-2 pt-1 font-semibold">{{ state.nomeUsuarioAtual() }}</p>
                 <p class="px-2 pb-2 text-xs text-muted-foreground">
-                  {{ state.ehOperador() ? 'Operador' : 'Solicitante' }}
+                  {{ state.rotuloPerfilAtual() }}
                 </p>
                 <button
                   type="button"
@@ -321,16 +308,10 @@ export class BuscaRapidaComponent implements AfterViewInit {
           </nav>
 
           <div class="mt-auto space-y-3">
-            <select
-              appSelect
-              aria-label="Perfil (protótipo)"
-              [ngModel]="state.perfil()"
-              (ngModelChange)="aoMudarPerfil($event)"
-            >
-              <option value="operador">Operador</option>
-              <option value="rafael">Solicitante · Rafael</option>
-              <option value="beatriz">Solicitante · Beatriz</option>
-            </select>
+            <p class="text-sm">
+              <span class="font-semibold">{{ state.nomeUsuarioAtual() }}</span>
+              <span class="text-muted-foreground"> · {{ state.rotuloPerfilAtual() }}</span>
+            </p>
 
             <select
               appSelect
@@ -375,11 +356,6 @@ export class TopbarComponent {
   irParaMobile(aba: AbaNavegacao): void {
     this.state.irParaAba(aba);
     this.menuMobileAberto.set(false);
-  }
-
-  aoMudarPerfil(novoPerfil: PerfilUsuario): void {
-    this.state.definirPerfil(novoPerfil);
-    this.menuUsuarioAberto.set(false);
   }
 
   aoMudarEstado(novoEstado: EstadoTela): void {
