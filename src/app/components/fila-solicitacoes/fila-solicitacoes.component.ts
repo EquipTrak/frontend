@@ -315,7 +315,7 @@ function listaDesatualizada(erro: unknown): boolean {
     <app-modal
       [aberto]="!!solicitacaoParaRetirada()"
       titulo="Registrar retirada"
-      (fechar)="solicitacaoParaRetirada.set(null)"
+      (fechar)="fecharModalRetirada()"
     >
       <app-alerta tom="info" titulo="Aprovar não é retirar">
         Confirme somente quando o equipamento for entregue em mãos. Ele passará a EMPRESTADO.
@@ -325,17 +325,23 @@ function listaDesatualizada(erro: unknown): boolean {
         <span class="font-mono text-accent-text">{{ solicitacaoParaRetirada()?.patrimonio }}</span>
         · {{ solicitacaoParaRetirada()?.inicio }} → {{ solicitacaoParaRetirada()?.fim }}
       </p>
+      @if (erroRetirada()) {
+        <p class="mt-3 text-sm text-danger" role="alert">{{ erroRetirada() }}</p>
+      }
 
       <ng-container rodape>
         <button
           type="button"
           appBotao
           variant="fantasma"
-          (click)="solicitacaoParaRetirada.set(null)"
+          [disabled]="retirando()"
+          (click)="fecharModalRetirada()"
         >
           Cancelar
         </button>
-        <button type="button" appBotao (click)="confirmarRetirada()">Confirmar retirada</button>
+        <button type="button" appBotao [disabled]="retirando()" (click)="confirmarRetirada()">
+          {{ retirando() ? 'Registrando…' : 'Confirmar retirada' }}
+        </button>
       </ng-container>
     </app-modal>
 
@@ -460,6 +466,8 @@ export class FilaSolicitacoesComponent {
   );
 
   readonly solicitacaoParaRetirada = signal<Solicitacao | null>(null);
+  readonly retirando = signal<boolean>(false);
+  readonly erroRetirada = signal<string>('');
   readonly patrimonioBloqueado = signal<string | null>(null);
 
   readonly solicitacaoParaDevolucao = signal<Solicitacao | null>(null);
@@ -559,15 +567,36 @@ export class FilaSolicitacoesComponent {
     if (equip?.situacao === 'EMPRESTADO') {
       this.patrimonioBloqueado.set(solicitacao.patrimonio);
     } else {
+      this.erroRetirada.set('');
       this.solicitacaoParaRetirada.set(solicitacao);
     }
   }
 
-  confirmarRetirada(): void {
-    const s = this.solicitacaoParaRetirada();
-    if (!s) return;
-    this.state.registrarRetirada(s);
+  fecharModalRetirada(): void {
+    if (this.retirando()) return;
     this.solicitacaoParaRetirada.set(null);
+  }
+
+  async confirmarRetirada(): Promise<void> {
+    const s = this.solicitacaoParaRetirada();
+    if (!s || this.retirando()) return;
+    this.retirando.set(true);
+    this.erroRetirada.set('');
+    try {
+      await this.state.registrarRetirada(s);
+      this.solicitacaoParaRetirada.set(null);
+    } catch (erro) {
+      this.erroRetirada.set(
+        erroDaDecisao(erro, 'Não foi possível registrar a retirada. Tente novamente.'),
+      );
+      // A solicitação ou o equipamento mudaram no servidor: mostra o estado atual.
+      if (listaDesatualizada(erro)) {
+        void this.state.carregarSolicitacoes();
+        void this.state.carregarCatalogo();
+      }
+    } finally {
+      this.retirando.set(false);
+    }
   }
 
   abrirModalDevolucao(solicitacao: Solicitacao): void {

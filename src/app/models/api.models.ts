@@ -72,6 +72,15 @@ export interface NovaSolicitacaoApi {
   fimPrevisto: string;
 }
 
+/** Empréstimo criado na retirada (parte 4). `ATRASADO` é calculado pelo backend. */
+export interface EmprestimoResumoApi {
+  id: number;
+  status: 'ATIVO' | 'ATRASADO' | 'DEVOLVIDO';
+  dataRetirada: string;
+  dataPrevistaDevolucao: string;
+  dataDevolucao: string | null;
+}
+
 export interface SolicitacaoApi {
   id: number;
   solicitante: { id: number; nome: string };
@@ -81,6 +90,8 @@ export interface SolicitacaoApi {
   fimPrevisto: string;
   status: 'PENDENTE' | 'APROVADA' | 'REJEITADA' | 'CANCELADA';
   motivoRejeicao: string | null;
+  /** Preenchido depois da retirada. */
+  emprestimo: EmprestimoResumoApi | null;
 }
 
 // Histórico do equipamento (parte 2b).

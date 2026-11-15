@@ -63,6 +63,8 @@ export interface Solicitacao {
   patrimonio: string;
   /** Descrição do equipamento vinda da API; sem ela, a tela procura no catálogo carregado. */
   descricaoEquipamento?: string;
+  /** Número do empréstimo, depois da retirada. */
+  emprestimoId?: number;
   inicio: string;
   fim: string;
   status: StatusSolicitacao;
