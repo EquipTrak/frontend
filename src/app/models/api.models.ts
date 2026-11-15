@@ -100,6 +100,20 @@ export interface SolicitacaoApi {
   emprestimo: EmprestimoResumoApi | null;
 }
 
+// Indicadores do painel (parte 5).
+
+/**
+ * GET /api/painel/indicadores. `atrasados` é um subconjunto de `emprestados`, então os quatro
+ * totais não somam `total` (RF20).
+ */
+export interface IndicadoresApi {
+  disponiveis: number;
+  emprestados: number;
+  atrasados: number;
+  indisponiveis: number;
+  total: number;
+}
+
 // Histórico do equipamento (parte 2b).
 
 export type TipoEventoApi =
