@@ -1,5 +1,7 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ErroApi } from '../../models/api.models';
 import { Equipamento } from '../../models/equiptrack.models';
 import { EquipTrackService } from '../../services/equiptrack.service';
 import { BotaoDirective, ChipFiltroComponent } from '../ui/botao.component';
@@ -14,9 +16,37 @@ import { ModalComponent } from '../ui/modal.component';
 import { PainelCardComponent } from '../ui/painel-card.component';
 import { SeloComponent } from '../ui/selo.component';
 
-interface ErrosSolicitacao {
+export interface ErrosSolicitacao {
   ini?: string;
   fim?: string;
+  geral?: string;
+}
+
+const HORA_EM_MS = 60 * 60 * 1000;
+
+/** Traduz a resposta de erro do POST /api/solicitacoes para as mensagens do formulário. */
+export function errosDaSolicitacao(erro: unknown): ErrosSolicitacao {
+  if (erro instanceof HttpErrorResponse) {
+    const corpo = erro.error as Partial<ErroApi> | null;
+    if ((erro.status === 400 || erro.status === 409) && corpo?.campos) {
+      const { inicioPrevisto, fimPrevisto, ...outros } = corpo.campos;
+      const erros: ErrosSolicitacao = {};
+      if (inicioPrevisto) erros.ini = inicioPrevisto;
+      if (fimPrevisto) erros.fim = fimPrevisto;
+      // Os demais campos (como o equipamento) não têm entrada no formulário.
+      const geral = Object.values(outros)[0];
+      if (geral) erros.geral = geral;
+      if (Object.keys(erros).length > 0) return erros;
+    }
+    // O 403 traz o motivo: cadastro de solicitante ausente, bloqueado ou matrícula inativa.
+    if (erro.status === 403) {
+      return { geral: corpo?.mensagem ?? 'Seu perfil não pode criar solicitações.' };
+    }
+    if (erro.status === 0) {
+      return { geral: 'Não foi possível falar com o servidor. Tente novamente.' };
+    }
+  }
+  return { geral: 'Não foi possível enviar a solicitação. Tente novamente.' };
 }
 
 @Component({
@@ -147,7 +177,7 @@ interface ErrosSolicitacao {
             (ngModelChange)="inicioPrevisto.set($event)"
           />
         </app-campo>
-        <app-campo id="fim" label="Fim previsto" [erro]="erros().fim">
+        <app-campo id="fim" label="Fim previsto" [erro]="erros().fim" [ajuda]="ajudaPrazo()">
           <input
             id="fim"
             type="datetime-local"
@@ -157,13 +187,26 @@ interface ErrosSolicitacao {
             (ngModelChange)="fimPrevisto.set($event)"
           />
         </app-campo>
+        @if (erros().geral) {
+          <p class="text-sm text-danger" role="alert">
+            {{ erros().geral }}
+          </p>
+        }
       </div>
 
       <ng-container rodape>
-        <button type="button" appBotao variant="fantasma" (click)="fecharModalSolicitar()">
+        <button
+          type="button"
+          appBotao
+          variant="fantasma"
+          [disabled]="enviando()"
+          (click)="fecharModalSolicitar()"
+        >
           Cancelar
         </button>
-        <button type="button" appBotao (click)="enviarSolicitacao()">Enviar solicitação</button>
+        <button type="button" appBotao [disabled]="enviando()" (click)="enviarSolicitacao()">
+          {{ enviando() ? 'Enviando…' : 'Enviar solicitação' }}
+        </button>
       </ng-container>
     </app-modal>
   `,
@@ -185,6 +228,12 @@ export class DisponiveisSolicitanteComponent {
   readonly inicioPrevisto = signal<string>('');
   readonly fimPrevisto = signal<string>('');
   readonly erros = signal<ErrosSolicitacao>({});
+  readonly enviando = signal<boolean>(false);
+
+  readonly ajudaPrazo = computed(() => {
+    const equip = this.equipamentoSelecionado();
+    return equip ? `Prazo máximo deste equipamento: ${equip.prazoMaxHoras} horas.` : undefined;
+  });
 
   readonly possuiAtraso = computed(() => {
     const eu = this.state.nomeUsuarioAtual();
@@ -218,14 +267,16 @@ export class DisponiveisSolicitanteComponent {
   }
 
   fecharModalSolicitar(): void {
+    if (this.enviando()) return;
     this.equipamentoSelecionado.set(null);
     this.erros.set({});
   }
 
-  enviarSolicitacao(): void {
+  async enviarSolicitacao(): Promise<void> {
     const equip = this.equipamentoSelecionado();
-    if (!equip) return;
+    if (!equip || this.enviando()) return;
 
+    // Validação local para resposta imediata; o backend repete todas as regras.
     const novosErros: ErrosSolicitacao = {};
     const ini = this.inicioPrevisto();
     const fim = this.fimPrevisto();
@@ -240,13 +291,24 @@ export class DisponiveisSolicitanteComponent {
       novosErros.fim = 'Informe a data e hora de fim.';
     } else if (ini && new Date(fim) <= new Date(ini)) {
       novosErros.fim = 'O fim deve ser posterior ao início.';
+    } else if (
+      ini &&
+      new Date(fim).getTime() - new Date(ini).getTime() > equip.prazoMaxHoras * HORA_EM_MS
+    ) {
+      novosErros.fim = `O prazo máximo deste equipamento é de ${equip.prazoMaxHoras} horas.`;
     }
 
     this.erros.set(novosErros);
+    if (Object.keys(novosErros).length > 0) return;
 
-    if (Object.keys(novosErros).length === 0) {
-      this.state.criarSolicitacao(equip, ini, fim);
+    this.enviando.set(true);
+    try {
+      await this.state.criarSolicitacao(equip, ini, fim);
       this.equipamentoSelecionado.set(null);
+    } catch (erro) {
+      this.erros.set(errosDaSolicitacao(erro));
+    } finally {
+      this.enviando.set(false);
     }
   }
 }

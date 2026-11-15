@@ -63,6 +63,26 @@ export interface NovoEquipamentoApi {
   prazoMaxHoras: number;
 }
 
+// Solicitações de empréstimo (parte 3a).
+
+/** Corpo de POST /api/solicitacoes. As datas vão em ISO-8601 (UTC). */
+export interface NovaSolicitacaoApi {
+  equipamentoId: number;
+  inicioPrevisto: string;
+  fimPrevisto: string;
+}
+
+export interface SolicitacaoApi {
+  id: number;
+  solicitante: { id: number; nome: string };
+  equipamento: { id: number; patrimonio: string; descricao: string };
+  dataSolicitacao: string;
+  inicioPrevisto: string;
+  fimPrevisto: string;
+  status: 'PENDENTE' | 'APROVADA' | 'REJEITADA' | 'CANCELADA';
+  motivoRejeicao: string | null;
+}
+
 // Histórico do equipamento (parte 2b).
 
 export type TipoEventoApi =
