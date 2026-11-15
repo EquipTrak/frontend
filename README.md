@@ -15,7 +15,7 @@ O front chama a API do backend (`EquipTrak/backend`) pelo prefixo `/api`.
 
 O `ng serve` repassa `/api` para `http://localhost:8080` (`proxy.conf.mjs`). Para outro endereço, defina a variável `API_URL`. No Docker, o `compose.yaml` já aponta para o backend rodando na máquina.
 
-Por enquanto usam a API a autenticação, a tela de Equipamentos (categorias, lista, filtros e cadastro), a gaveta de histórico do equipamento as telas do solicitante (botão "Solicitar", lista "Minhas solicitações" e cancelamento) e a fila do operador (lista, aprovar e rejeitar). A retirada também usa a API; a devolução ainda é local e passa a usar a API na parte 4b. O andamento está em `docs/integracao-frontend.md`, no backend.
+Por enquanto usam a API a autenticação, a tela de Equipamentos (categorias, lista, filtros e cadastro), a gaveta de histórico do equipamento as telas do solicitante (botão "Solicitar", lista "Minhas solicitações" e cancelamento) e a fila do operador (lista, aprovar e rejeitar). A retirada e a devolução também usam a API. O andamento está em `docs/integracao-frontend.md`, no backend.
 
 ## Angular CLI
 

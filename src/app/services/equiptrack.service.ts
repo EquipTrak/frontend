@@ -16,6 +16,7 @@ import {
 } from '../models/equiptrack.models';
 import {
   CategoriaApi,
+  DevolucaoApi,
   EmprestimoResumoApi,
   EquipamentoApi,
   EventoHistoricoApi,
@@ -113,8 +114,8 @@ export class EquipTrackService {
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
 
-  // Equipamentos, categorias, histórico, solicitações e retirada usam a API. A devolução ainda é
-  // local e passa a usar a API na parte 4b (ver backend/docs/integracao-frontend.md).
+  // Equipamentos, categorias, histórico, solicitações, retirada e devolução usam a API
+  // (ver backend/docs/integracao-frontend.md).
   readonly perfil = computed(() => this.auth.usuario()?.perfil ?? null);
   readonly estado = signal<EstadoTela>('normal');
   readonly categorias = signal<CategoriaApi[]>([]);
@@ -122,8 +123,6 @@ export class EquipTrackService {
   /** Para o solicitante, as próprias solicitações; para o operador, a fila. As duas vêm da API. */
   readonly solicitacoes = signal<Solicitacao[]>([]);
   readonly estadoSolicitacoes = signal<'normal' | 'carregando' | 'erro'>('normal');
-  /** Eventos das ações que ainda são locais (devolução), por patrimônio. */
-  readonly historico = signal<Record<string, EventoHistorico[]>>({});
   /** Eventos do equipamento aberto na gaveta, vindos da API. */
   readonly historicoDaApi = signal<EventoHistorico[]>([]);
   readonly estadoHistorico = signal<'normal' | 'carregando' | 'erro'>('normal');
@@ -186,12 +185,9 @@ export class EquipTrackService {
     return this.buscarEquipamento(pat) ?? null;
   });
 
-  readonly eventosHistoricoSelecionado = computed<EventoHistorico[]>(() => {
-    const pat = this.patrimonioHistoricoAberto();
-    if (!pat) return [];
-    // Os eventos locais são desta sessão, portanto mais recentes que os já salvos no backend.
-    return [...(this.historico()[pat] ?? []), ...this.historicoDaApi()];
-  });
+  readonly eventosHistoricoSelecionado = computed<EventoHistorico[]>(() =>
+    this.patrimonioHistoricoAberto() ? this.historicoDaApi() : [],
+  );
 
   abrirAbaInicial(): void {
     this.abaAtiva.set(this.ehOperador() ? 'PAINEL' : 'DISPONÍVEIS');
@@ -244,14 +240,6 @@ export class EquipTrackService {
 
   buscarEquipamento(patrimonio: string): Equipamento | undefined {
     return this.equipamentos().find((e) => e.patrimonio === patrimonio);
-  }
-
-  adicionarEvento(patrimonio: string, evento: Omit<EventoHistorico, 'data'>): void {
-    const dataAtual = this.formatarDataHoraAtual();
-    this.historico.update((mapa) => ({
-      ...mapa,
-      [patrimonio]: [{ data: dataAtual, ...evento }, ...(mapa[patrimonio] ?? [])],
-    }));
   }
 
   /** Busca categorias e equipamentos na API. Em caso de falha, a tela mostra o estado de erro. */
@@ -341,29 +329,35 @@ export class EquipTrackService {
     this.toast.success(`${solicitacao.patrimonio} entregue a ${solicitacao.solicitante}.`);
   }
 
-  registrarDevolucao(
+  /**
+   * Registra a devolução pela API (RF11). O backend fecha o empréstimo, grava a condição no equipamento,
+   * deixa-o DANIFICADO se voltou com avaria (RF12) e grava o evento no histórico. Em caso de erro, a
+   * exceção segue para a tela.
+   */
+  async registrarDevolucao(
     solicitacao: Solicitacao,
     condicao: CondicaoEquipamento,
     observacao: string,
-  ): void {
-    this.atualizarSolicitacao(solicitacao.id, { status: 'DEVOLVIDO' });
+  ): Promise<void> {
+    const corpo: DevolucaoApi = { condicao, observacao: observacao.trim() || null };
+    const devolvida = paraSolicitacao(
+      await firstValueFrom(
+        this.http.post<SolicitacaoApi>(
+          `${API_URL}/emprestimos/${solicitacao.emprestimoId}/devolucao`,
+          corpo,
+        ),
+      ),
+    );
+    this.substituirSolicitacao(devolvida);
     this.atualizarEquipamento(solicitacao.patrimonio, {
       situacao: condicao === 'COM_AVARIA' ? 'DANIFICADO' : 'DISPONIVEL',
       condicao,
     });
-    this.adicionarEvento(solicitacao.patrimonio, {
-      usuario: this.nomeUsuarioAtual(),
-      tipo: 'Devolução registrada',
-      observacao: observacao.trim() || 'Sem observações.',
-      badge: 'DEVOLVIDO',
-    });
-    this.adicionarEvento(solicitacao.patrimonio, {
-      usuario: this.nomeUsuarioAtual(),
-      tipo: 'Condição atualizada',
-      observacao: `Condição na devolução: ${formatarValorBadge(condicao)}.`,
-      badge: condicao,
-    });
-    this.toast.success('Devolução registrada.');
+    this.toast.success(
+      condicao === 'COM_AVARIA'
+        ? `Devolução registrada. ${solicitacao.patrimonio} ficou DANIFICADO até a avaliação.`
+        : 'Devolução registrada.',
+    );
   }
 
   /**
@@ -427,20 +421,10 @@ export class EquipTrackService {
     this.toast.success('Solicitação cancelada.');
   }
 
-  private atualizarSolicitacao(id: string, parcial: Partial<Solicitacao>): void {
-    this.solicitacoes.update((lista) =>
-      lista.map((item) => (item.id === id ? { ...item, ...parcial } : item)),
-    );
-  }
-
   private atualizarEquipamento(patrimonio: string, parcial: Partial<Equipamento>): void {
     this.equipamentos.update((lista) =>
       lista.map((item) => (item.patrimonio === patrimonio ? { ...item, ...parcial } : item)),
     );
-  }
-
-  private formatarDataHoraAtual(): string {
-    return formatarDataHora(new Date());
   }
 }
 

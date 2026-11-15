@@ -81,6 +81,12 @@ export interface EmprestimoResumoApi {
   dataDevolucao: string | null;
 }
 
+/** Corpo de POST /api/emprestimos/{id}/devolucao. */
+export interface DevolucaoApi {
+  condicao: EquipamentoApi['condicao'];
+  observacao: string | null;
+}
+
 export interface SolicitacaoApi {
   id: number;
   solicitante: { id: number; nome: string };

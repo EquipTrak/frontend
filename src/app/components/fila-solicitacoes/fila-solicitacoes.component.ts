@@ -44,6 +44,16 @@ export function erroDaDecisao(erro: unknown, padrao: string): string {
   return padrao;
 }
 
+/** Como `erroDaDecisao`, mas também lê os erros dos campos da devolução. */
+export function erroDaDevolucao(erro: unknown, padrao: string): string {
+  if (erro instanceof HttpErrorResponse && erro.status === 400) {
+    const campos = (erro.error as Partial<ErroApi> | null)?.campos;
+    const doCampo = campos?.['condicao'] ?? campos?.['observacao'];
+    if (doCampo) return doCampo;
+  }
+  return erroDaDecisao(erro, padrao);
+}
+
 /** A lista mudou no servidor desde que foi carregada e precisa ser buscada de novo. */
 function listaDesatualizada(erro: unknown): boolean {
   return erro instanceof HttpErrorResponse && (erro.status === 409 || erro.status === 404);
@@ -349,7 +359,7 @@ function listaDesatualizada(erro: unknown): boolean {
     <app-modal
       [aberto]="!!solicitacaoParaDevolucao()"
       titulo="Registrar devolução"
-      (fechar)="solicitacaoParaDevolucao.set(null)"
+      (fechar)="fecharModalDevolucao()"
     >
       <div class="space-y-4">
         <p class="text-sm">
@@ -368,6 +378,7 @@ function listaDesatualizada(erro: unknown): boolean {
           >
             <option value="OTIMA">Ótima</option>
             <option value="BOA">Boa</option>
+            <option value="REGULAR">Regular</option>
             <option value="COM_AVARIA">Com avaria</option>
           </select>
         </app-campo>
@@ -384,6 +395,7 @@ function listaDesatualizada(erro: unknown): boolean {
           <textarea
             id="obs"
             rows="3"
+            maxlength="500"
             [ngModel]="observacaoDevolucao()"
             (ngModelChange)="observacaoDevolucao.set($event)"
             class="w-full rounded-md border border-border bg-background p-3 text-sm focus:border-accent-text focus:outline-none"
@@ -391,16 +403,23 @@ function listaDesatualizada(erro: unknown): boolean {
         </app-campo>
       </div>
 
+      @if (erroDevolucao()) {
+        <p class="mt-3 text-sm text-danger" role="alert">{{ erroDevolucao() }}</p>
+      }
+
       <ng-container rodape>
         <button
           type="button"
           appBotao
           variant="fantasma"
-          (click)="solicitacaoParaDevolucao.set(null)"
+          [disabled]="devolvendo()"
+          (click)="fecharModalDevolucao()"
         >
           Cancelar
         </button>
-        <button type="button" appBotao (click)="confirmarDevolucao()">Confirmar devolução</button>
+        <button type="button" appBotao [disabled]="devolvendo()" (click)="confirmarDevolucao()">
+          {{ devolvendo() ? 'Registrando…' : 'Confirmar devolução' }}
+        </button>
       </ng-container>
     </app-modal>
 
@@ -473,6 +492,8 @@ export class FilaSolicitacoesComponent {
   readonly solicitacaoParaDevolucao = signal<Solicitacao | null>(null);
   readonly condicaoDevolucao = signal<CondicaoEquipamento>('OTIMA');
   readonly observacaoDevolucao = signal<string>('');
+  readonly devolvendo = signal<boolean>(false);
+  readonly erroDevolucao = signal<string>('');
 
   readonly solicitacoesDaAba = computed(() => {
     const statuses = FILA_ABAS_STATUS[this.abaStatusAtiva()];
@@ -603,13 +624,33 @@ export class FilaSolicitacoesComponent {
     this.solicitacaoParaDevolucao.set(solicitacao);
     this.condicaoDevolucao.set('OTIMA');
     this.observacaoDevolucao.set('');
+    this.erroDevolucao.set('');
   }
 
-  confirmarDevolucao(): void {
-    const s = this.solicitacaoParaDevolucao();
-    if (!s) return;
-    this.state.registrarDevolucao(s, this.condicaoDevolucao(), this.observacaoDevolucao());
+  fecharModalDevolucao(): void {
+    if (this.devolvendo()) return;
     this.solicitacaoParaDevolucao.set(null);
+  }
+
+  async confirmarDevolucao(): Promise<void> {
+    const s = this.solicitacaoParaDevolucao();
+    if (!s || this.devolvendo()) return;
+    this.devolvendo.set(true);
+    this.erroDevolucao.set('');
+    try {
+      await this.state.registrarDevolucao(s, this.condicaoDevolucao(), this.observacaoDevolucao());
+      this.solicitacaoParaDevolucao.set(null);
+    } catch (erro) {
+      this.erroDevolucao.set(
+        erroDaDevolucao(erro, 'Não foi possível registrar a devolução. Tente novamente.'),
+      );
+      if (listaDesatualizada(erro)) {
+        void this.state.carregarSolicitacoes();
+        void this.state.carregarCatalogo();
+      }
+    } finally {
+      this.devolvendo.set(false);
+    }
   }
 
   verHistoricoBloqueado(): void {
