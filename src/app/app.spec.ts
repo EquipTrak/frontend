@@ -28,9 +28,10 @@ describe('App & EquipTrackService', () => {
     expect(app).toBeTruthy();
   });
 
-  it('should initialize EquipTrackService with default equipments and requests', () => {
+  it('should start with no equipment until the catalog is loaded from the API', () => {
     const service = TestBed.inject(EquipTrackService);
-    expect(service.equipamentos().length).toBe(6);
+    expect(service.equipamentos().length).toBe(0);
+    expect(service.categorias().length).toBe(0);
     expect(service.solicitacoes().length).toBe(8);
     expect(service.perfil()).toBeNull();
     expect(service.abaAtiva()).toBe('PAINEL');
@@ -53,18 +54,5 @@ describe('App & EquipTrackService', () => {
     service.abrirAbaInicial();
     expect(service.ehOperador()).toBe(true);
     expect(service.abaAtiva()).toBe('PAINEL');
-  });
-
-  it('should register new equipment and add history event', () => {
-    const service = TestBed.inject(EquipTrackService);
-    service.cadastrarEquipamento({
-      patrimonio: 'NB-0003',
-      descricao: 'Notebook MacBook Pro',
-      categoria: 'Notebook',
-      condicao: 'OTIMA',
-      situacao: 'DISPONIVEL',
-    });
-    expect(service.buscarEquipamento('NB-0003')?.descricao).toBe('Notebook MacBook Pro');
-    expect(service.historico()['NB-0003']?.length).toBe(1);
   });
 });

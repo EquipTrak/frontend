@@ -332,7 +332,7 @@ import { SeloComponent } from '../ui/selo.component';
         @if (condicaoDevolucao() === 'COM_AVARIA') {
           <app-alerta
             tom="warning"
-            titulo="O equipamento ficará INDISPONÍVEL até avaliação."
+            titulo="O equipamento ficará DANIFICADO até avaliação."
             [temConteudo]="false"
           />
         }
@@ -428,8 +428,8 @@ export class FilaSolicitacoesComponent {
   readonly equipamentosDaSituacao = computed(() => {
     const abaSit = this.abaSituacaoAtiva();
     if (!abaSit) return [];
-    const sit = FILA_ABAS_SITUACAO[abaSit];
-    return this.state.equipamentos().filter((e) => e.situacao === sit);
+    const situacoes = FILA_ABAS_SITUACAO[abaSit];
+    return this.state.equipamentos().filter((e) => situacoes.includes(e.situacao));
   });
 
   selecionarAbaStatus(aba: AbaFilaSolicitacoes): void {
@@ -443,8 +443,8 @@ export class FilaSolicitacoesComponent {
   }
 
   contarPorAbaSituacao(aba: AbaSituacaoEquipamento): number {
-    const sit = FILA_ABAS_SITUACAO[aba];
-    return this.state.equipamentos().filter((e) => e.situacao === sit).length;
+    const situacoes = FILA_ABAS_SITUACAO[aba];
+    return this.state.equipamentos().filter((e) => situacoes.includes(e.situacao)).length;
   }
 
   abrirModalRejeitar(solicitacao: Solicitacao): void {

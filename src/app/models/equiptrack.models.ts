@@ -1,8 +1,10 @@
-export type CategoriaEquipamento = 'Notebook' | 'Projetor' | 'Câmera' | 'Kit' | 'Adaptador';
+// Condição e situação seguem os valores do DER e da API (ver backend/docs/integracao-frontend.md).
+export type CondicaoEquipamento = 'OTIMA' | 'BOA' | 'REGULAR' | 'COM_AVARIA';
 
-export type CondicaoEquipamento = 'OTIMA' | 'BOA' | 'COM_AVARIA';
+export type SituacaoEquipamento = 'DISPONIVEL' | 'EMPRESTADO' | 'DANIFICADO' | 'EM_MANUTENCAO';
 
-export type SituacaoEquipamento = 'DISPONIVEL' | 'EMPRESTADO' | 'INDISPONIVEL';
+/** Situações somadas no indicador e na aba "Indisponíveis". */
+export const SITUACOES_INDISPONIVEIS: SituacaoEquipamento[] = ['DANIFICADO', 'EM_MANUTENCAO'];
 
 export type StatusSolicitacao =
   | 'PENDENTE'
@@ -41,11 +43,15 @@ export type AbaFilaSolicitacoes = 'Pendentes' | 'Aprovadas' | 'Em uso' | 'Atrasa
 export type AbaSituacaoEquipamento = 'Disponíveis' | 'Emprestados' | 'Indisponíveis';
 
 export interface Equipamento {
+  id: number;
   patrimonio: string;
   descricao: string;
-  categoria: CategoriaEquipamento | string;
+  /** Nome da categoria, usado na exibição e nos filtros. */
+  categoria: string;
+  categoriaId: number;
   condicao: CondicaoEquipamento;
   situacao: SituacaoEquipamento;
+  prazoMaxHoras: number;
 }
 
 export interface Solicitacao {
@@ -72,14 +78,6 @@ export interface ConfiguracaoBadge {
   icone?: NomeIcone;
 }
 
-export const CATEGORIAS: CategoriaEquipamento[] = [
-  'Notebook',
-  'Projetor',
-  'Câmera',
-  'Kit',
-  'Adaptador',
-];
-
 export const FILA_ABAS_STATUS: Record<AbaFilaSolicitacoes, StatusSolicitacao[]> = {
   Pendentes: ['PENDENTE'],
   Aprovadas: ['APROVADA'],
@@ -87,16 +85,17 @@ export const FILA_ABAS_STATUS: Record<AbaFilaSolicitacoes, StatusSolicitacao[]> 
   Atrasados: ['ATRASADO'],
 };
 
-export const FILA_ABAS_SITUACAO: Record<AbaSituacaoEquipamento, SituacaoEquipamento> = {
-  Disponíveis: 'DISPONIVEL',
-  Emprestados: 'EMPRESTADO',
-  Indisponíveis: 'INDISPONIVEL',
+export const FILA_ABAS_SITUACAO: Record<AbaSituacaoEquipamento, SituacaoEquipamento[]> = {
+  Disponíveis: ['DISPONIVEL'],
+  Emprestados: ['EMPRESTADO'],
+  Indisponíveis: SITUACOES_INDISPONIVEIS,
 };
 
 export const BADGE_CONFIG: Record<BadgeValor, ConfiguracaoBadge> = {
   DISPONIVEL: { texto: 'Disponível', tom: 'success', icone: 'check' },
   EMPRESTADO: { texto: 'Emprestado', tom: 'info', icone: 'rotate-ccw' },
-  INDISPONIVEL: { texto: 'Indisponível', tom: 'neutral', icone: 'circle-slash' },
+  DANIFICADO: { texto: 'Danificado', tom: 'danger', icone: 'circle-slash' },
+  EM_MANUTENCAO: { texto: 'Em manutenção', tom: 'neutral', icone: 'circle-slash' },
   PENDENTE: { texto: 'Pendente', tom: 'warning', icone: 'clock' },
   APROVADA: { texto: 'Aprovada', tom: 'warning', icone: 'check' },
   RETIRADO: { texto: 'Retirado', tom: 'info', icone: 'rotate-ccw' },
@@ -106,57 +105,13 @@ export const BADGE_CONFIG: Record<BadgeValor, ConfiguracaoBadge> = {
   // Selos de condição: estritamente sem ícones ou símbolos conforme Guia de Design
   OTIMA: { texto: 'Ótima', tom: 'success' },
   BOA: { texto: 'Boa', tom: 'warning' },
+  REGULAR: { texto: 'Regular', tom: 'warning' },
   COM_AVARIA: { texto: 'Com avaria', tom: 'danger' },
 };
 
 export function formatarValorBadge(valor: BadgeValor | string): string {
   return BADGE_CONFIG[valor as BadgeValor]?.texto ?? valor;
 }
-
-export const EQUIPAMENTOS_INICIAIS: Equipamento[] = [
-  {
-    patrimonio: 'NB-0001',
-    descricao: 'Notebook Dell Latitude',
-    categoria: 'Notebook',
-    condicao: 'BOA',
-    situacao: 'DISPONIVEL',
-  },
-  {
-    patrimonio: 'NB-0002',
-    descricao: 'Notebook Lenovo ThinkPad',
-    categoria: 'Notebook',
-    condicao: 'OTIMA',
-    situacao: 'EMPRESTADO',
-  },
-  {
-    patrimonio: 'PJ-0001',
-    descricao: 'Projetor Epson',
-    categoria: 'Projetor',
-    condicao: 'BOA',
-    situacao: 'DISPONIVEL',
-  },
-  {
-    patrimonio: 'CM-0001',
-    descricao: 'Câmera Canon',
-    categoria: 'Câmera',
-    condicao: 'COM_AVARIA',
-    situacao: 'INDISPONIVEL',
-  },
-  {
-    patrimonio: 'KT-0001',
-    descricao: 'Kit tripé e iluminação',
-    categoria: 'Kit',
-    condicao: 'OTIMA',
-    situacao: 'DISPONIVEL',
-  },
-  {
-    patrimonio: 'AD-0001',
-    descricao: 'Adaptador HDMI',
-    categoria: 'Adaptador',
-    condicao: 'BOA',
-    situacao: 'DISPONIVEL',
-  },
-];
 
 export const SOLICITACOES_INICIAIS: Solicitacao[] = [
   {

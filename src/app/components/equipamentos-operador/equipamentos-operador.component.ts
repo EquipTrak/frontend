@@ -1,7 +1,8 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ErroApi, NovoEquipamentoApi } from '../../models/api.models';
 import {
-  CATEGORIAS,
   CondicaoEquipamento,
   formatarValorBadge,
   SituacaoEquipamento,
@@ -21,8 +22,31 @@ import { SeloComponent } from '../ui/selo.component';
 
 interface ErrosNovoEquipamento {
   patrimonio?: string;
-  categoria?: string;
+  categoriaId?: string;
   descricao?: string;
+  condicao?: string;
+  situacao?: string;
+  prazoMaxHoras?: string;
+  geral?: string;
+}
+
+const PRAZO_PADRAO_HORAS = 24;
+
+/** Traduz a resposta de erro do POST /api/equipamentos para as mensagens do formulário. */
+export function errosDoCadastro(erro: unknown): ErrosNovoEquipamento {
+  if (erro instanceof HttpErrorResponse) {
+    const corpo = erro.error as Partial<ErroApi> | null;
+    if ((erro.status === 400 || erro.status === 409) && corpo?.campos) {
+      return { ...corpo.campos };
+    }
+    if (erro.status === 403) {
+      return { geral: 'Seu perfil não pode cadastrar equipamentos.' };
+    }
+    if (erro.status === 0) {
+      return { geral: 'Não foi possível falar com o servidor. Tente novamente.' };
+    }
+  }
+  return { geral: 'Não foi possível salvar o equipamento. Tente novamente.' };
 }
 
 @Component({
@@ -54,12 +78,12 @@ interface ErrosNovoEquipamento {
         <app-chip-filtro [ativo]="!filtroCategoria()" (selecionar)="filtroCategoria.set('')">
           Todas
         </app-chip-filtro>
-        @for (cat of categorias; track cat) {
+        @for (cat of state.categorias(); track cat.id) {
           <app-chip-filtro
-            [ativo]="filtroCategoria() === cat"
-            (selecionar)="filtroCategoria.set(cat)"
+            [ativo]="filtroCategoria() === cat.nome"
+            (selecionar)="filtroCategoria.set(cat.nome)"
           >
-            {{ cat }}
+            {{ cat.nome }}
           </app-chip-filtro>
         }
         <span class="mx-1 w-px shrink-0 bg-border"></span>
@@ -78,7 +102,7 @@ interface ErrosNovoEquipamento {
           <app-estado-carregando />
         }
         @case ('erro') {
-          <app-estado-erro (tentarNovamente)="state.definirEstado('normal')" />
+          <app-estado-erro (tentarNovamente)="state.carregarCatalogo()" />
         }
         @case ('vazio') {
           <app-estado-vazio
@@ -184,6 +208,12 @@ interface ErrosNovoEquipamento {
       (fechar)="fecharModalNovo()"
     >
       <div class="space-y-4">
+        @if (erros().geral) {
+          <p role="alert" class="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+            {{ erros().geral }}
+          </p>
+        }
+
         <app-campo
           id="pat"
           label="Identificador patrimonial"
@@ -201,16 +231,16 @@ interface ErrosNovoEquipamento {
           />
         </app-campo>
 
-        <app-campo id="cat" label="Categoria" [erro]="erros().categoria">
+        <app-campo id="cat" label="Categoria" [erro]="erros().categoriaId">
           <select
             id="cat"
             appSelect
-            [ngModel]="novaCategoria()"
-            (ngModelChange)="novaCategoria.set($event)"
+            [ngModel]="novaCategoriaId()"
+            (ngModelChange)="novaCategoriaId.set($event)"
           >
-            <option value="">Selecione…</option>
-            @for (cat of categorias; track cat) {
-              <option [value]="cat">{{ cat }}</option>
+            <option [ngValue]="null">Selecione…</option>
+            @for (cat of state.categorias(); track cat.id) {
+              <option [ngValue]="cat.id">{{ cat.nome }}</option>
             }
           </select>
         </app-campo>
@@ -227,7 +257,7 @@ interface ErrosNovoEquipamento {
         </app-campo>
 
         <div class="grid gap-4 sm:grid-cols-2">
-          <app-campo id="cond" label="Condição">
+          <app-campo id="cond" label="Condição" [erro]="erros().condicao">
             <select
               id="cond"
               appSelect
@@ -236,11 +266,12 @@ interface ErrosNovoEquipamento {
             >
               <option value="OTIMA">Ótima</option>
               <option value="BOA">Boa</option>
+              <option value="REGULAR">Regular</option>
               <option value="COM_AVARIA">Com avaria</option>
             </select>
           </app-campo>
 
-          <app-campo id="sit" label="Situação inicial">
+          <app-campo id="sit" label="Situação inicial" [erro]="erros().situacao">
             <select
               id="sit"
               appSelect
@@ -248,18 +279,37 @@ interface ErrosNovoEquipamento {
               (ngModelChange)="novaSituacao.set($event)"
             >
               <option value="DISPONIVEL">Disponível</option>
-              <option value="INDISPONIVEL">Indisponível</option>
+              <option value="DANIFICADO">Danificado</option>
+              <option value="EM_MANUTENCAO">Em manutenção</option>
             </select>
           </app-campo>
         </div>
+
+        <app-campo
+          id="prazo"
+          label="Prazo máximo de empréstimo (horas)"
+          [erro]="erros().prazoMaxHoras"
+          ajuda="De 1 a 720 horas (30 dias)."
+        >
+          <input
+            id="prazo"
+            type="number"
+            min="1"
+            max="720"
+            appInput
+            [invalido]="!!erros().prazoMaxHoras"
+            [ngModel]="novoPrazoHoras()"
+            (ngModelChange)="novoPrazoHoras.set($event)"
+          />
+        </app-campo>
       </div>
 
       <ng-container rodape>
         <button type="button" appBotao variant="fantasma" (click)="fecharModalNovo()">
           Cancelar
         </button>
-        <button type="button" appBotao (click)="salvarNovoEquipamento()">
-          Salvar equipamento
+        <button type="button" appBotao [disabled]="salvando()" (click)="salvarNovoEquipamento()">
+          {{ salvando() ? 'Salvando…' : 'Salvar equipamento' }}
         </button>
       </ng-container>
     </app-modal>
@@ -275,19 +325,25 @@ interface ErrosNovoEquipamento {
 })
 export class EquipamentosOperadorComponent {
   readonly state = inject(EquipTrackService);
-  readonly categorias = CATEGORIAS;
-  readonly situacoesFiltro: SituacaoEquipamento[] = ['DISPONIVEL', 'EMPRESTADO', 'INDISPONIVEL'];
+  readonly situacoesFiltro: SituacaoEquipamento[] = [
+    'DISPONIVEL',
+    'EMPRESTADO',
+    'DANIFICADO',
+    'EM_MANUTENCAO',
+  ];
   readonly formatarBadge = formatarValorBadge;
 
   readonly filtroCategoria = signal<string>('');
   readonly filtroSituacao = signal<string>('');
   readonly modalNovoAberto = signal<boolean>(false);
+  readonly salvando = signal<boolean>(false);
 
   readonly novoPatrimonio = signal<string>('');
-  readonly novaCategoria = signal<string>('');
+  readonly novaCategoriaId = signal<number | null>(null);
   readonly novaDescricao = signal<string>('');
   readonly novaCondicao = signal<CondicaoEquipamento>('OTIMA');
-  readonly novaSituacao = signal<SituacaoEquipamento>('DISPONIVEL');
+  readonly novaSituacao = signal<NovoEquipamentoApi['situacao']>('DISPONIVEL');
+  readonly novoPrazoHoras = signal<number | null>(PRAZO_PADRAO_HORAS);
   readonly erros = signal<ErrosNovoEquipamento>({});
 
   readonly equipamentosFiltrados = computed(() => {
@@ -313,14 +369,20 @@ export class EquipamentosOperadorComponent {
   }
 
   fecharModalNovo(): void {
+    if (this.salvando()) return;
     this.erros.set({});
     this.modalNovoAberto.set(false);
   }
 
-  salvarNovoEquipamento(): void {
+  async salvarNovoEquipamento(): Promise<void> {
+    if (this.salvando()) return;
+
+    // Validação local para resposta imediata; o backend repete todas as regras.
     const novosErros: ErrosNovoEquipamento = {};
     const patrimonioNormalizado = this.novoPatrimonio().trim().toUpperCase();
     const existentes = this.state.equipamentos().map((e) => e.patrimonio);
+    const categoriaId = this.novaCategoriaId();
+    const prazo = Number(this.novoPrazoHoras());
 
     if (!patrimonioNormalizado) {
       novosErros.patrimonio = 'Informe o identificador patrimonial.';
@@ -328,31 +390,48 @@ export class EquipamentosOperadorComponent {
       novosErros.patrimonio = 'Este patrimônio já está cadastrado.';
     }
 
-    if (!this.novaCategoria()) {
-      novosErros.categoria = 'Selecione uma categoria.';
+    if (categoriaId === null) {
+      novosErros.categoriaId = 'Selecione uma categoria.';
     }
 
     if (!this.novaDescricao().trim()) {
       novosErros.descricao = 'Descreva o equipamento.';
     }
 
-    this.erros.set(novosErros);
+    if (!Number.isInteger(prazo) || prazo < 1 || prazo > 720) {
+      novosErros.prazoMaxHoras = 'Informe um prazo entre 1 e 720 horas.';
+    }
 
-    if (Object.keys(novosErros).length === 0) {
-      this.state.cadastrarEquipamento({
+    this.erros.set(novosErros);
+    if (Object.keys(novosErros).length > 0 || categoriaId === null) return;
+
+    this.salvando.set(true);
+    try {
+      await this.state.cadastrarEquipamento({
         patrimonio: patrimonioNormalizado,
-        categoria: this.novaCategoria(),
+        categoriaId,
         descricao: this.novaDescricao().trim(),
         condicao: this.novaCondicao(),
         situacao: this.novaSituacao(),
+        prazoMaxHoras: prazo,
       });
-      this.novoPatrimonio.set('');
-      this.novaCategoria.set('');
-      this.novaDescricao.set('');
-      this.novaCondicao.set('OTIMA');
-      this.novaSituacao.set('DISPONIVEL');
+      this.limparFormulario();
       this.modalNovoAberto.set(false);
+    } catch (erro) {
+      this.erros.set(errosDoCadastro(erro));
+    } finally {
+      this.salvando.set(false);
     }
+  }
+
+  private limparFormulario(): void {
+    this.novoPatrimonio.set('');
+    this.novaCategoriaId.set(null);
+    this.novaDescricao.set('');
+    this.novaCondicao.set('OTIMA');
+    this.novaSituacao.set('DISPONIVEL');
+    this.novoPrazoHoras.set(PRAZO_PADRAO_HORAS);
+    this.erros.set({});
   }
 }
 
