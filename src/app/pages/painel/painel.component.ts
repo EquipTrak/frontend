@@ -9,7 +9,6 @@ import { MinhasSolicitacoesComponent } from '../../components/minhas-solicitacoe
 import { TopbarComponent } from '../../components/topbar/topbar.component';
 import { GavetaComponent } from '../../components/ui/modal.component';
 import { ToasterComponent } from '../../components/ui/toaster.component';
-import { SOLICITACOES_INICIAIS } from '../../models/equiptrack.models';
 import { AuthService } from '../../services/auth.service';
 import { EquipTrackService } from '../../services/equiptrack.service';
 
@@ -125,13 +124,7 @@ export class PainelComponent implements OnInit {
     this.title.setTitle('Painel — EquipTrack');
     this.state.abrirAbaInicial();
     void this.state.carregarCatalogo();
-    // A fila do operador ainda usa dados de demonstração; só o solicitante busca as suas na API.
-    if (this.state.ehOperador()) {
-      // Evita herdar a lista de um solicitante que usou o mesmo navegador antes.
-      this.state.solicitacoes.set([...SOLICITACOES_INICIAIS]);
-    } else {
-      void this.state.carregarMinhasSolicitacoes();
-    }
+    void this.state.carregarSolicitacoes();
   }
 
   formatarNumero(valor: number): string {

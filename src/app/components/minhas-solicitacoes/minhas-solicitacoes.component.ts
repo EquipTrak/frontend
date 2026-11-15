@@ -58,7 +58,7 @@ export function erroDoCancelamento(erro: unknown): string {
           <app-estado-carregando />
         }
         @case ('erro') {
-          <app-estado-erro (tentarNovamente)="state.carregarMinhasSolicitacoes()" />
+          <app-estado-erro (tentarNovamente)="state.carregarSolicitacoes()" />
         }
         @default {
           @if (minhasSolicitacoes().length === 0) {
@@ -209,7 +209,7 @@ export class MinhasSolicitacoesComponent {
       this.erroCancelamento.set(erroDoCancelamento(erro));
       // Se a solicitação mudou no servidor, a lista mostra o status atual.
       if (erro instanceof HttpErrorResponse && (erro.status === 409 || erro.status === 404)) {
-        void this.state.carregarMinhasSolicitacoes();
+        void this.state.carregarSolicitacoes();
       }
     } finally {
       this.cancelando.set(false);

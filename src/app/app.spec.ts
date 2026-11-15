@@ -32,7 +32,7 @@ describe('App & EquipTrackService', () => {
     const service = TestBed.inject(EquipTrackService);
     expect(service.equipamentos().length).toBe(0);
     expect(service.categorias().length).toBe(0);
-    expect(service.solicitacoes().length).toBe(8);
+    expect(service.solicitacoes().length).toBe(0);
     expect(service.perfil()).toBeNull();
     expect(service.abaAtiva()).toBe('PAINEL');
   });
