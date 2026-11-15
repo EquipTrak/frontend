@@ -4,12 +4,12 @@ import { firstValueFrom } from 'rxjs';
 import { API_URL } from '../api.config';
 import {
   AbaNavegacao,
+  BadgeValor,
   CondicaoEquipamento,
   Equipamento,
   EstadoTela,
   EventoHistorico,
   formatarValorBadge,
-  HISTORICO_INICIAL,
   SITUACOES_INDISPONIVEIS,
   Solicitacao,
   SOLICITACOES_INICIAIS,
@@ -17,8 +17,10 @@ import {
 import {
   CategoriaApi,
   EquipamentoApi,
+  EventoHistoricoApi,
   NovoEquipamentoApi,
   ROTULOS_PERFIL,
+  TipoEventoApi,
 } from '../models/api.models';
 import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
@@ -36,6 +38,45 @@ export function paraEquipamento(api: EquipamentoApi): Equipamento {
   };
 }
 
+const ROTULOS_EVENTO: Record<TipoEventoApi, string> = {
+  CADASTRO: 'Equipamento cadastrado',
+  RETIRADA: 'Retirada registrada',
+  DEVOLUCAO: 'Devolução registrada',
+  MUDANCA_CONDICAO: 'Condição atualizada',
+  MUDANCA_SITUACAO: 'Situação atualizada',
+  MANUTENCAO: 'Manutenção registrada',
+  CORRECAO: 'Correção registrada',
+};
+
+function formatarDataHora(data: Date): string {
+  return data.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).replace(',', '');
+}
+
+/** Converte um evento da API para o formato exibido na gaveta de histórico. */
+export function paraEventoHistorico(api: EventoHistoricoApi): EventoHistorico {
+  let badge: BadgeValor | undefined;
+  switch (api.tipo) {
+    case 'RETIRADA':
+      badge = 'RETIRADO';
+      break;
+    case 'DEVOLUCAO':
+      badge = 'DEVOLVIDO';
+      break;
+    case 'MUDANCA_CONDICAO':
+      badge = api.condicaoNova ?? undefined;
+      break;
+    default:
+      badge = api.situacaoNova ?? api.condicaoNova ?? undefined;
+  }
+  return {
+    data: formatarDataHora(new Date(api.dataHora)),
+    usuario: api.usuario.nome,
+    tipo: ROTULOS_EVENTO[api.tipo] ?? api.tipo,
+    observacao: api.observacao ?? 'Sem observações.',
+    badge,
+  };
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -44,14 +85,18 @@ export class EquipTrackService {
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
 
-  // Equipamentos e categorias vêm da API. Solicitações e histórico ainda são dados de
+  // Equipamentos, categorias e histórico vêm da API. As solicitações ainda são dados de
   // demonstração e passam a vir da API nas próximas etapas (ver backend/docs/integracao-frontend.md).
   readonly perfil = computed(() => this.auth.usuario()?.perfil ?? null);
   readonly estado = signal<EstadoTela>('normal');
   readonly categorias = signal<CategoriaApi[]>([]);
   readonly equipamentos = signal<Equipamento[]>([]);
   readonly solicitacoes = signal<Solicitacao[]>([...SOLICITACOES_INICIAIS]);
-  readonly historico = signal<Record<string, EventoHistorico[]>>({ ...HISTORICO_INICIAL });
+  /** Eventos das ações que ainda são locais (solicitações, retirada e devolução), por patrimônio. */
+  readonly historico = signal<Record<string, EventoHistorico[]>>({});
+  /** Eventos do equipamento aberto na gaveta, vindos da API. */
+  readonly historicoDaApi = signal<EventoHistorico[]>([]);
+  readonly estadoHistorico = signal<'normal' | 'carregando' | 'erro'>('normal');
   readonly abaAtiva = signal<AbaNavegacao>('PAINEL');
   readonly patrimonioHistoricoAberto = signal<string | null>(null);
 
@@ -114,7 +159,8 @@ export class EquipTrackService {
   readonly eventosHistoricoSelecionado = computed<EventoHistorico[]>(() => {
     const pat = this.patrimonioHistoricoAberto();
     if (!pat) return [];
-    return this.historico()[pat] ?? [];
+    // Os eventos locais são desta sessão, portanto mais recentes que os já salvos no backend.
+    return [...(this.historico()[pat] ?? []), ...this.historicoDaApi()];
   });
 
   abrirAbaInicial(): void {
@@ -132,8 +178,38 @@ export class EquipTrackService {
     }
   }
 
+  /** Abre a gaveta de histórico (ou fecha, com null). Só a visão do operador tem histórico (RF15). */
   abrirHistorico(patrimonio: string | null): void {
+    if (patrimonio && !this.ehOperador()) return;
     this.patrimonioHistoricoAberto.set(patrimonio);
+    this.historicoDaApi.set([]);
+    if (patrimonio) {
+      void this.carregarHistorico();
+    } else {
+      this.estadoHistorico.set('normal');
+    }
+  }
+
+  /** Busca na API o histórico do equipamento aberto na gaveta. */
+  async carregarHistorico(): Promise<void> {
+    const patrimonio = this.patrimonioHistoricoAberto();
+    if (!patrimonio) return;
+    this.estadoHistorico.set('carregando');
+    try {
+      const eventos = await firstValueFrom(
+        this.http.get<EventoHistoricoApi[]>(
+          `${API_URL}/equipamentos/${encodeURIComponent(patrimonio)}/historico`,
+        ),
+      );
+      // A gaveta pode ter sido fechada ou trocada de equipamento enquanto a resposta vinha.
+      if (this.patrimonioHistoricoAberto() !== patrimonio) return;
+      this.historicoDaApi.set(eventos.map(paraEventoHistorico));
+      this.estadoHistorico.set('normal');
+    } catch {
+      if (this.patrimonioHistoricoAberto() === patrimonio) {
+        this.estadoHistorico.set('erro');
+      }
+    }
   }
 
   buscarEquipamento(patrimonio: string): Equipamento | undefined {
@@ -175,13 +251,7 @@ export class EquipTrackService {
     this.equipamentos.update((lista) =>
       [...lista, novo].sort((a, b) => a.patrimonio.localeCompare(b.patrimonio)),
     );
-    // O histórico ainda é local; passa a vir da API na etapa da gaveta de histórico.
-    this.adicionarEvento(novo.patrimonio, {
-      usuario: this.nomeUsuarioAtual(),
-      tipo: 'Equipamento cadastrado',
-      observacao: 'Situação inicial definida.',
-      badge: novo.situacao,
-    });
+    // O evento de cadastro é gravado pelo backend e aparece ao abrir o histórico.
     this.toast.success(
       `${novo.patrimonio} cadastrado como ${formatarValorBadge(novo.situacao).toUpperCase()}.`,
     );
@@ -282,15 +352,11 @@ export class EquipTrackService {
   }
 
   private formatarDataHoraAtual(): string {
-    return new Date()
-      .toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
-      .replace(',', '');
+    return formatarDataHora(new Date());
   }
 
   private formatarDataHoraIso(valorIso: string): string {
-    return new Date(valorIso)
-      .toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
-      .replace(',', '');
+    return formatarDataHora(new Date(valorIso));
   }
 }
 

@@ -62,3 +62,29 @@ export interface NovoEquipamentoApi {
   situacao: Exclude<EquipamentoApi['situacao'], 'EMPRESTADO'>;
   prazoMaxHoras: number;
 }
+
+// Histórico do equipamento (parte 2b).
+
+export type TipoEventoApi =
+  | 'CADASTRO'
+  | 'RETIRADA'
+  | 'DEVOLUCAO'
+  | 'MUDANCA_CONDICAO'
+  | 'MUDANCA_SITUACAO'
+  | 'MANUTENCAO'
+  | 'CORRECAO';
+
+/** Item de GET /api/equipamentos/{patrimonio}/historico, do mais recente para o mais antigo. */
+export interface EventoHistoricoApi {
+  id: number;
+  /** Data e hora em ISO-8601 (UTC). */
+  dataHora: string;
+  tipo: TipoEventoApi;
+  usuario: { id: number; nome: string };
+  situacaoAnterior: EquipamentoApi['situacao'] | null;
+  situacaoNova: EquipamentoApi['situacao'] | null;
+  condicaoAnterior: EquipamentoApi['condicao'] | null;
+  condicaoNova: EquipamentoApi['condicao'] | null;
+  observacao: string | null;
+  emprestimoId: number | null;
+}

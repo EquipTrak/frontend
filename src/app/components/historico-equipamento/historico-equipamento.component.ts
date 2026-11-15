@@ -1,13 +1,23 @@
-import { Component, input } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { Equipamento, EventoHistorico } from '../../models/equiptrack.models';
-import { EstadoVazioComponent } from '../ui/estados-visuais.component';
+import {
+  EstadoCarregandoComponent,
+  EstadoErroComponent,
+  EstadoVazioComponent,
+} from '../ui/estados-visuais.component';
 import { MascoteComponent } from '../ui/mascote-logo.component';
 import { SeloComponent } from '../ui/selo.component';
 
 @Component({
   selector: 'app-historico-equipamento',
   standalone: true,
-  imports: [SeloComponent, EstadoVazioComponent, MascoteComponent],
+  imports: [
+    SeloComponent,
+    EstadoVazioComponent,
+    EstadoCarregandoComponent,
+    EstadoErroComponent,
+    MascoteComponent,
+  ],
   template: `
     <div>
       <div class="grain border-b border-border bg-topbar p-5">
@@ -20,7 +30,11 @@ import { SeloComponent } from '../ui/selo.component';
         </div>
       </div>
 
-      @if (eventos().length === 0) {
+      @if (estado() === 'carregando') {
+        <app-estado-carregando />
+      } @else if (estado() === 'erro') {
+        <app-estado-erro (tentarNovamente)="tentarNovamente.emit()" />
+      } @else if (eventos().length === 0) {
         <app-estado-vazio
           titulo="Sem histórico"
           texto="Este equipamento ainda não tem movimentações registradas."
@@ -34,7 +48,9 @@ import { SeloComponent } from '../ui/selo.component';
               ></span>
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <p class="font-semibold">{{ ev.tipo }}</p>
-                <app-selo [valor]="ev.badge" />
+                @if (ev.badge; as badge) {
+                  <app-selo [valor]="badge" />
+                }
               </div>
               <p class="text-xs text-muted-foreground">{{ ev.data }} · {{ ev.usuario }}</p>
               <p class="mt-1 text-sm text-foreground/80">{{ ev.observacao }}</p>
@@ -52,5 +68,7 @@ import { SeloComponent } from '../ui/selo.component';
 export class HistoricoEquipamentoComponent {
   readonly equipamento = input.required<Equipamento>();
   readonly eventos = input.required<EventoHistorico[]>();
+  readonly estado = input<'normal' | 'carregando' | 'erro'>('normal');
+  readonly tentarNovamente = output<void>();
 }
 

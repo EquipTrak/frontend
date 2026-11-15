@@ -69,7 +69,8 @@ export interface EventoHistorico {
   usuario: string;
   tipo: string;
   observacao: string;
-  badge: BadgeValor;
+  /** Selo opcional: alguns eventos da API não mudam situação nem condição. */
+  badge?: BadgeValor;
 }
 
 export interface ConfiguracaoBadge {
@@ -180,58 +181,3 @@ export const SOLICITACOES_INICIAIS: Solicitacao[] = [
     status: 'APROVADA',
   },
 ];
-
-export const HISTORICO_INICIAL: Record<string, EventoHistorico[]> = {
-  'NB-0002': [
-    {
-      data: '01/10/2026 08:12',
-      usuario: 'Marina Souza',
-      tipo: 'Retirada registrada',
-      observacao: 'Entregue com carregador e mochila.',
-      badge: 'RETIRADO',
-    },
-    {
-      data: '30/09/2026 16:40',
-      usuario: 'Marina Souza',
-      tipo: 'Solicitação aprovada',
-      observacao: 'Período confirmado.',
-      badge: 'APROVADA',
-    },
-    {
-      data: '30/09/2026 10:05',
-      usuario: 'Rafael Lima',
-      tipo: 'Solicitação criada',
-      observacao: 'Uso em apresentação para cliente.',
-      badge: 'PENDENTE',
-    },
-    {
-      data: '18/09/2026 17:20',
-      usuario: 'Marina Souza',
-      tipo: 'Devolução registrada',
-      observacao: 'Devolvido sem avarias.',
-      badge: 'DEVOLVIDO',
-    },
-    {
-      data: '18/09/2026 17:21',
-      usuario: 'Marina Souza',
-      tipo: 'Condição atualizada',
-      observacao: 'Revisão concluída, teclado limpo.',
-      badge: 'OTIMA',
-    },
-    {
-      data: '15/09/2026 09:00',
-      usuario: 'Marina Souza',
-      tipo: 'Retirada registrada',
-      observacao: 'Retirado por Beatriz Alves.',
-      badge: 'RETIRADO',
-    },
-    {
-      data: '01/09/2026 11:30',
-      usuario: 'Marina Souza',
-      tipo: 'Equipamento cadastrado',
-      observacao: 'Situação inicial definida.',
-      badge: 'DISPONIVEL',
-    },
-  ],
-};
-

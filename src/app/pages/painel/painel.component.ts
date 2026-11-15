@@ -101,6 +101,8 @@ import { EquipTrackService } from '../../services/equiptrack.service';
           <app-historico-equipamento
             [equipamento]="equipSel"
             [eventos]="state.eventosHistoricoSelecionado()"
+            [estado]="state.estadoHistorico()"
+            (tentarNovamente)="state.carregarHistorico()"
           />
         }
       </app-gaveta>
