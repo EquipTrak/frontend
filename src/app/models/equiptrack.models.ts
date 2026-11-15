@@ -57,8 +57,12 @@ export interface Equipamento {
 
 export interface Solicitacao {
   id: string;
+  /** Número da solicitação na API. Os dados de demonstração da fila do operador ainda não têm. */
+  numero?: number;
   solicitante: string;
   patrimonio: string;
+  /** Descrição do equipamento vinda da API; sem ela, a tela procura no catálogo carregado. */
+  descricaoEquipamento?: string;
   inicio: string;
   fim: string;
   status: StatusSolicitacao;

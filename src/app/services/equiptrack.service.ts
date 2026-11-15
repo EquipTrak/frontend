@@ -58,8 +58,10 @@ function formatarDataHora(data: Date): string {
 export function paraSolicitacao(api: SolicitacaoApi): Solicitacao {
   return {
     id: `S-${api.id}`,
+    numero: api.id,
     solicitante: api.solicitante.nome,
     patrimonio: api.equipamento.patrimonio,
+    descricaoEquipamento: api.equipamento.descricao,
     inicio: formatarDataHora(new Date(api.inicioPrevisto)),
     fim: formatarDataHora(new Date(api.fimPrevisto)),
     status: api.status,
@@ -100,14 +102,19 @@ export class EquipTrackService {
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
 
-  // Equipamentos, categorias, histórico e a criação de solicitação usam a API. As listas de
-  // solicitações ainda partem de dados de demonstração e passam a vir da API nas próximas etapas
-  // (ver backend/docs/integracao-frontend.md).
+  // Equipamentos, categorias, histórico e as solicitações do solicitante (criar, listar e cancelar)
+  // usam a API. A fila do operador ainda parte de dados de demonstração e passa a vir da API nas
+  // próximas etapas (ver backend/docs/integracao-frontend.md).
   readonly perfil = computed(() => this.auth.usuario()?.perfil ?? null);
   readonly estado = signal<EstadoTela>('normal');
   readonly categorias = signal<CategoriaApi[]>([]);
   readonly equipamentos = signal<Equipamento[]>([]);
+  /**
+   * Para o solicitante, as próprias solicitações vindas da API. Para o operador, ainda os dados de
+   * demonstração da fila.
+   */
   readonly solicitacoes = signal<Solicitacao[]>([...SOLICITACOES_INICIAIS]);
+  readonly estadoSolicitacoes = signal<'normal' | 'carregando' | 'erro'>('normal');
   /** Eventos das ações que ainda são locais (aprovação, retirada e devolução), por patrimônio. */
   readonly historico = signal<Record<string, EventoHistorico[]>>({});
   /** Eventos do equipamento aberto na gaveta, vindos da API. */
@@ -345,10 +352,45 @@ export class EquipTrackService {
     const nova = paraSolicitacao(
       await firstValueFrom(this.http.post<SolicitacaoApi>(`${API_URL}/solicitacoes`, corpo)),
     );
-    // A lista "Minhas solicitações" ainda não vem da API; a nova entra no topo até recarregar a página.
+    // A API lista da mais recente para a mais antiga, então a nova entra no topo.
     this.solicitacoes.update((lista) => [nova, ...lista]);
     this.toast.success('Solicitação enviada! Status: PENDENTE.');
     return nova;
+  }
+
+  /** Busca na API as solicitações do usuário logado (RF18), da mais recente para a mais antiga. */
+  async carregarMinhasSolicitacoes(): Promise<void> {
+    this.estadoSolicitacoes.set('carregando');
+    // Tira da tela os dados de demonstração (ou os de outra sessão) enquanto a resposta não chega.
+    this.solicitacoes.set([]);
+    try {
+      const lista = await firstValueFrom(
+        this.http.get<SolicitacaoApi[]>(`${API_URL}/solicitacoes/minhas`),
+      );
+      this.solicitacoes.set(lista.map(paraSolicitacao));
+      this.estadoSolicitacoes.set('normal');
+    } catch {
+      this.estadoSolicitacoes.set('erro');
+    }
+  }
+
+  /**
+   * Cancela pela API a própria solicitação pendente (RF23). Em caso de erro, a exceção segue para a
+   * tela, que mostra a mensagem.
+   */
+  async cancelarSolicitacao(solicitacao: Solicitacao): Promise<void> {
+    const cancelada = paraSolicitacao(
+      await firstValueFrom(
+        this.http.post<SolicitacaoApi>(
+          `${API_URL}/solicitacoes/${solicitacao.numero}/cancelamento`,
+          null,
+        ),
+      ),
+    );
+    this.solicitacoes.update((lista) =>
+      lista.map((item) => (item.id === cancelada.id ? cancelada : item)),
+    );
+    this.toast.success('Solicitação cancelada.');
   }
 
   private atualizarSolicitacao(id: string, parcial: Partial<Solicitacao>): void {
