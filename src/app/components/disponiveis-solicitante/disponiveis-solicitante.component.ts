@@ -7,6 +7,7 @@ import { EquipTrackService } from '../../services/equiptrack.service';
 import { BotaoDirective, ChipFiltroComponent } from '../ui/botao.component';
 import { CampoComponent, InputDirective } from '../ui/campo.component';
 import {
+  AlertaComponent,
   EstadoCarregandoComponent,
   EstadoErroComponent,
   EstadoVazioComponent,
@@ -65,9 +66,18 @@ export function errosDaSolicitacao(erro: unknown): ErrosSolicitacao {
     EstadoErroComponent,
     EstadoVazioComponent,
     ModalComponent,
+    AlertaComponent,
   ],
   template: `
     <app-painel-card titulo="Disponíveis" [contagem]="equipamentosDisponiveis().length">
+      @if (possuiAtraso()) {
+        <div class="p-4 pb-0">
+          <app-alerta titulo="Novas solicitações bloqueadas">
+            Você tem um empréstimo em atraso. Devolva o equipamento ao operador para liberar novos
+            pedidos.
+          </app-alerta>
+        </div>
+      }
       <div class="space-y-2 border-b border-border px-4 py-3">
         <div class="relative">
           <app-icon
@@ -235,10 +245,11 @@ export class DisponiveisSolicitanteComponent {
     return equip ? `Prazo máximo deste equipamento: ${equip.prazoMaxHoras} horas.` : undefined;
   });
 
-  readonly possuiAtraso = computed(() => {
-    const eu = this.state.nomeUsuarioAtual();
-    return this.state.solicitacoes().some((s) => s.solicitante === eu && s.status === 'ATRASADO');
-  });
+  // A API devolve só as solicitações de quem está logado, com o atraso já calculado (RN15).
+  // O backend também recusa a solicitação; o botão desabilitado só evita a tentativa.
+  readonly possuiAtraso = computed(() =>
+    this.state.solicitacoes().some((s) => s.status === 'ATRASADO'),
+  );
 
   readonly equipamentosDisponiveis = computed(() => {
     const cat = this.categoriaFiltro();
