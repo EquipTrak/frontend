@@ -1,12 +1,11 @@
 // Contratos da API do backend (ver backend/docs/autenticacao.md).
 
-export type PerfilApi = 'SOLICITANTE' | 'OPERADOR' | 'ADMINISTRADOR' | 'ENCARREGADO';
+export type PerfilApi = 'SOLICITANTE' | 'OPERADOR' | 'ADMINISTRADOR';
 
 export const ROTULOS_PERFIL: Record<PerfilApi, string> = {
   SOLICITANTE: 'Solicitante',
   OPERADOR: 'Operador',
   ADMINISTRADOR: 'Administrador',
-  ENCARREGADO: 'Encarregado',
 };
 
 export interface UsuarioApi {
