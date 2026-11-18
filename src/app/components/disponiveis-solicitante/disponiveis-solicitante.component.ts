@@ -150,12 +150,13 @@ export function errosDaSolicitacao(erro: unknown): ErrosSolicitacao {
                   </div>
                   <h3 class="mt-2 font-semibold">{{ e.descricao }}</h3>
                   <p class="text-xs text-muted-foreground">{{ e.categoria }}</p>
+                  <!-- Com atraso, o botão continua clicável para explicar o bloqueio no pop-up. -->
                   <button
                     type="button"
                     appBotao
-                    extraClass="mt-4 w-full"
-                    [disabled]="possuiAtraso()"
-                    (click)="abrirModalSolicitar(e)"
+                    [extraClass]="'mt-4 w-full' + (possuiAtraso() ? ' opacity-50' : '')"
+                    [attr.aria-disabled]="possuiAtraso()"
+                    (click)="aoClicarSolicitar(e)"
                   >
                     Solicitar
                   </button>
@@ -166,6 +167,35 @@ export function errosDaSolicitacao(erro: unknown): ErrosSolicitacao {
         }
       }
     </app-painel-card>
+
+    <app-modal
+      [aberto]="alertaAtrasoAberto()"
+      titulo="Solicitação bloqueada"
+      [perigo]="true"
+      (fechar)="alertaAtrasoAberto.set(false)"
+    >
+      <div role="alert" class="space-y-3 text-sm">
+        <p>
+          Você não pode fazer novas solicitações enquanto tiver empréstimos em atraso no sistema.
+          Devolva o equipamento ao operador para liberar novos pedidos.
+        </p>
+        <ul class="space-y-1">
+          @for (s of solicitacoesAtrasadas(); track s.id) {
+            <li class="flex items-center justify-between gap-3 rounded-sm bg-danger/10 px-3 py-2">
+              <span class="font-mono text-danger">{{ s.patrimonio }}</span>
+              <span class="text-xs text-muted-foreground">Devolução prevista: {{ s.fim }}</span>
+            </li>
+          }
+        </ul>
+      </div>
+
+      <ng-container rodape>
+        <button type="button" appBotao variant="fantasma" (click)="verMinhasSolicitacoes()">
+          Ver minhas solicitações
+        </button>
+        <button type="button" appBotao (click)="alertaAtrasoAberto.set(false)">Entendi</button>
+      </ng-container>
+    </app-modal>
 
     <app-modal
       [aberto]="!!equipamentoSelecionado()"
@@ -245,11 +275,14 @@ export class DisponiveisSolicitanteComponent {
     return equip ? `Prazo máximo deste equipamento: ${equip.prazoMaxHoras} horas.` : undefined;
   });
 
+  readonly alertaAtrasoAberto = signal<boolean>(false);
+
   // A API devolve só as solicitações de quem está logado, com o atraso já calculado (RN15).
-  // O backend também recusa a solicitação; o botão desabilitado só evita a tentativa.
-  readonly possuiAtraso = computed(() =>
-    this.state.solicitacoes().some((s) => s.status === 'ATRASADO'),
+  // O backend também recusa a solicitação; o pop-up só evita a tentativa e explica o motivo.
+  readonly solicitacoesAtrasadas = computed(() =>
+    this.state.solicitacoes().filter((s) => s.status === 'ATRASADO'),
   );
+  readonly possuiAtraso = computed(() => this.solicitacoesAtrasadas().length > 0);
 
   readonly equipamentosDisponiveis = computed(() => {
     const cat = this.categoriaFiltro();
@@ -268,6 +301,19 @@ export class DisponiveisSolicitanteComponent {
     this.termoBusca.set('');
     this.categoriaFiltro.set('');
     this.state.definirEstado('normal');
+  }
+
+  aoClicarSolicitar(equipamento: Equipamento): void {
+    if (this.possuiAtraso()) {
+      this.alertaAtrasoAberto.set(true);
+      return;
+    }
+    this.abrirModalSolicitar(equipamento);
+  }
+
+  verMinhasSolicitacoes(): void {
+    this.alertaAtrasoAberto.set(false);
+    this.state.irParaAba('MINHAS SOLICITAÇÕES');
   }
 
   abrirModalSolicitar(equipamento: Equipamento): void {
