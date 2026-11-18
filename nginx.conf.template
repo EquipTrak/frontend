@@ -42,12 +42,14 @@ server {
         proxy_read_timeout 60s;
         client_max_body_size 1m;
 
-        proxy_set_header Host $host;
+        # $http_host (com a porta), não $host: o navegador manda Origin com a porta e o Spring só trata a chamada
+        # como da mesma origem (sem CORS) se o Host também a tiver.
+        proxy_set_header Host $http_host;
         # Sobrescreve (não acrescenta) o X-Forwarded-For: o cliente não consegue forjar o próprio IP, que o
         # backend usa no bloqueio de tentativas de login.
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Host $http_host;
     }
 
     # Arquivos com hash no nome (main-XXXX.js, styles-XXXX.css) nunca mudam: cache longo.
