@@ -1,5 +1,24 @@
 # EquiptrackFrontend
 
+## Integração com o backend
+
+O front chama a API do backend (`EquipTrak/backend`) pelo prefixo `/api`.
+
+1. Suba o backend na porta 8080 com usuários de demonstração (ver o README do backend):
+
+   ```bash
+   SPRING_PROFILES_ACTIVE=mysql,dev EQUIPTRACK_DEV_SENHA=sua-senha ./gradlew bootRun
+   ```
+
+2. Neste projeto, rode `npm install` e depois `npm start`.
+3. Acesse `http://localhost:4200` e entre com um dos usuários de demonstração, como `marina.souza@equiptrack.local` (Operador) ou `rafael.lima@equiptrack.local` (Solicitante).
+
+O `ng serve` repassa `/api` para `http://localhost:8080` (`proxy.conf.mjs`). Para outro endereço, defina a variável `API_URL`. No Docker, o `compose.yaml` já aponta para o backend rodando na máquina.
+
+Por enquanto só a autenticação usa a API. Equipamentos, solicitações e histórico ainda são dados de demonstração. O andamento está em `docs/integracao-frontend.md`, no backend.
+
+## Angular CLI
+
 This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.1.8.
 
 ## Development server

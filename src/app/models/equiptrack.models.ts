@@ -32,8 +32,6 @@ export type NomeIcone =
   | 'plus'
   | 'search';
 
-export type PerfilUsuario = 'operador' | 'rafael' | 'beatriz';
-
 export type EstadoTela = 'normal' | 'carregando' | 'vazio' | 'erro';
 
 export type AbaNavegacao = 'PAINEL' | 'SOLICITAÇÕES' | 'DISPONÍVEIS' | 'MINHAS SOLICITAÇÕES';
@@ -81,12 +79,6 @@ export const CATEGORIAS: CategoriaEquipamento[] = [
   'Kit',
   'Adaptador',
 ];
-
-export const NOMES_PERFIL: Record<PerfilUsuario, string> = {
-  operador: 'Marina Souza',
-  rafael: 'Rafael Lima',
-  beatriz: 'Beatriz Alves',
-};
 
 export const FILA_ABAS_STATUS: Record<AbaFilaSolicitacoes, StatusSolicitacao[]> = {
   Pendentes: ['PENDENTE'],

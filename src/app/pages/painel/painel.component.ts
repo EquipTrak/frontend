@@ -1,6 +1,6 @@
 import { Component, computed, inject, OnInit } from '@angular/core';
 import { Title } from '@angular/platform-browser';
-import { ActivatedRoute, Router } from '@angular/router';
+import { Router } from '@angular/router';
 import { DisponiveisSolicitanteComponent } from '../../components/disponiveis-solicitante/disponiveis-solicitante.component';
 import { EquipamentosOperadorComponent } from '../../components/equipamentos-operador/equipamentos-operador.component';
 import { FilaSolicitacoesComponent } from '../../components/fila-solicitacoes/fila-solicitacoes.component';
@@ -9,7 +9,7 @@ import { MinhasSolicitacoesComponent } from '../../components/minhas-solicitacoe
 import { TopbarComponent } from '../../components/topbar/topbar.component';
 import { GavetaComponent } from '../../components/ui/modal.component';
 import { ToasterComponent } from '../../components/ui/toaster.component';
-import { PerfilUsuario } from '../../models/equiptrack.models';
+import { AuthService } from '../../services/auth.service';
 import { EquipTrackService } from '../../services/equiptrack.service';
 
 @Component({
@@ -109,7 +109,7 @@ import { EquipTrackService } from '../../services/equiptrack.service';
 })
 export class PainelComponent implements OnInit {
   readonly state = inject(EquipTrackService);
-  private readonly route = inject(ActivatedRoute);
+  private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly title = inject(Title);
 
@@ -120,22 +120,16 @@ export class PainelComponent implements OnInit {
 
   ngOnInit(): void {
     this.title.setTitle('Painel — EquipTrack');
-    this.route.queryParamMap.subscribe((params) => {
-      const perfilParam = params.get('perfil');
-      if (perfilParam === 'operador' || perfilParam === 'rafael' || perfilParam === 'beatriz') {
-        this.state.definirPerfil(perfilParam as PerfilUsuario);
-      } else {
-        this.state.definirPerfil('operador');
-      }
-    });
+    this.state.abrirAbaInicial();
   }
 
   formatarNumero(valor: number): string {
     return String(valor).padStart(2, '0');
   }
 
-  voltarAoLogin(): void {
-    void this.router.navigate(['/']);
+  async voltarAoLogin(): Promise<void> {
+    await this.auth.logout();
+    await this.router.navigate(['/']);
   }
 }
 

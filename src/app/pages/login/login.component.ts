@@ -1,8 +1,10 @@
-import { Component, inject, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Title } from '@angular/platform-browser';
 import { Router } from '@angular/router';
-import { PerfilUsuario } from '../../models/equiptrack.models';
+import { ErroApi } from '../../models/api.models';
+import { AuthService } from '../../services/auth.service';
 import { BotaoDirective } from '../../components/ui/botao.component';
 import { CampoComponent, InputDirective } from '../../components/ui/campo.component';
 import { AlertaComponent } from '../../components/ui/estados-visuais.component';
@@ -61,10 +63,8 @@ import { BrandLogoComponent, MascoteComponent } from '../../components/ui/mascot
             (ngSubmit)="aoSubmeter()"
             class="mt-6 space-y-4 rounded-md border border-border bg-surface p-5 chamfer"
           >
-            @if (erroCredenciais()) {
-              <app-alerta titulo="E-mail ou senha inválidos">
-                Confira os dados e tente novamente.
-              </app-alerta>
+            @if (erro(); as falha) {
+              <app-alerta [titulo]="falha.titulo">{{ falha.texto }}</app-alerta>
             }
 
             <app-campo id="email" label="E-mail">
@@ -79,7 +79,7 @@ import { BrandLogoComponent, MascoteComponent } from '../../components/ui/mascot
               />
             </app-campo>
 
-            <app-campo id="senha" label="Senha" ajuda="Protótipo: use a senha demo123">
+            <app-campo id="senha" label="Senha">
               <input
                 id="senha"
                 name="senha"
@@ -107,38 +107,87 @@ import { BrandLogoComponent, MascoteComponent } from '../../components/ui/mascot
   `,
 })
 export class LoginComponent {
+  private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly title = inject(Title);
 
-  readonly email = signal<string>('marina.souza@empresa.com');
+  readonly email = signal<string>('');
   readonly senha = signal<string>('');
-  readonly erroCredenciais = signal<boolean>(false);
+  readonly erro = signal<ErroLogin | null>(null);
+  readonly erroCredenciais = computed(() => this.erro()?.credenciais ?? false);
   readonly entrando = signal<boolean>(false);
 
   constructor() {
     this.title.setTitle('Entrar - EquipTrack');
   }
 
-  aoSubmeter(): void {
-    this.erroCredenciais.set(false);
+  async aoSubmeter(): Promise<void> {
+    if (this.entrando()) return;
+    this.erro.set(null);
     this.entrando.set(true);
-
-    window.setTimeout(() => {
+    try {
+      await this.auth.login(this.email().trim(), this.senha());
+      await this.router.navigate(['/painel']);
+    } catch (erro) {
+      this.erro.set(descreverErroLogin(erro));
+    } finally {
       this.entrando.set(false);
-      if (this.senha() !== 'demo123') {
-        this.erroCredenciais.set(true);
-        return;
-      }
+    }
+  }
+}
 
-      const emailLower = this.email().toLowerCase();
-      const perfil: PerfilUsuario = emailLower.startsWith('rafael')
-        ? 'rafael'
-        : emailLower.startsWith('beatriz')
-          ? 'beatriz'
-          : 'operador';
+interface ErroLogin {
+  titulo: string;
+  texto: string;
+  credenciais: boolean;
+}
 
-      void this.router.navigate(['/painel'], { queryParams: { perfil } });
-    }, 600);
+/** Traduz a resposta de erro do backend (ver backend/docs/autenticacao.md) em uma mensagem para a tela. */
+export function descreverErroLogin(erro: unknown): ErroLogin {
+  if (!(erro instanceof HttpErrorResponse)) {
+    return { titulo: 'Não foi possível entrar', texto: 'Tente novamente.', credenciais: false };
+  }
+  const corpo = erro.error as Partial<ErroApi> | null;
+  switch (erro.status) {
+    case 0:
+      return {
+        titulo: 'Servidor indisponível',
+        texto: 'Não foi possível conectar ao servidor. Tente novamente em instantes.',
+        credenciais: false,
+      };
+    case 400:
+      return {
+        titulo: 'Confira os dados',
+        texto: Object.values(corpo?.campos ?? {}).join(' ') || 'Preencha e-mail e senha.',
+        credenciais: false,
+      };
+    case 401:
+      return {
+        titulo: 'E-mail ou senha inválidos',
+        texto: 'Confira os dados e tente novamente.',
+        credenciais: true,
+      };
+    case 403:
+      return {
+        titulo: 'Acesso desativado',
+        texto: corpo?.mensagem ?? 'Procure o administrador.',
+        credenciais: false,
+      };
+    case 429: {
+      const segundos = Number(erro.headers.get('Retry-After'));
+      const minutos = Number.isFinite(segundos) && segundos > 0 ? Math.ceil(segundos / 60) : 15;
+      return {
+        titulo: 'Muitas tentativas',
+        texto: `O login foi bloqueado. Tente novamente em ${minutos} min.`,
+        credenciais: false,
+      };
+    }
+    default:
+      return {
+        titulo: 'Erro no servidor',
+        texto: corpo?.mensagem ?? 'Tente novamente em instantes.',
+        credenciais: false,
+      };
   }
 }
 

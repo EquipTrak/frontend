@@ -8,11 +8,11 @@ import {
   EventoHistorico,
   formatarValorBadge,
   HISTORICO_INICIAL,
-  NOMES_PERFIL,
-  PerfilUsuario,
   Solicitacao,
   SOLICITACOES_INICIAIS,
 } from '../models/equiptrack.models';
+import { ROTULOS_PERFIL } from '../models/api.models';
+import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
 
 @Injectable({
@@ -20,8 +20,11 @@ import { ToastService } from './toast.service';
 })
 export class EquipTrackService {
   private readonly toast = inject(ToastService);
+  private readonly auth = inject(AuthService);
 
-  readonly perfil = signal<PerfilUsuario>('operador');
+  // Equipamentos, solicitações e histórico ainda são dados de demonstração:
+  // passam a vir da API nas próximas etapas (ver backend/docs/integracao-frontend.md).
+  readonly perfil = computed(() => this.auth.usuario()?.perfil ?? null);
   readonly estado = signal<EstadoTela>('normal');
   readonly equipamentos = signal<Equipamento[]>([...EQUIPAMENTOS_INICIAIS]);
   readonly solicitacoes = signal<Solicitacao[]>([...SOLICITACOES_INICIAIS]);
@@ -29,11 +32,17 @@ export class EquipTrackService {
   readonly abaAtiva = signal<AbaNavegacao>('PAINEL');
   readonly patrimonioHistoricoAberto = signal<string | null>(null);
 
-  readonly ehOperador = computed(() => this.perfil() === 'operador');
-  readonly nomeUsuarioAtual = computed(() => NOMES_PERFIL[this.perfil()]);
+  // Por enquanto, todo perfil que não é Solicitante usa a visão do Operador.
+  readonly ehOperador = computed(() => this.perfil() !== 'SOLICITANTE');
+  readonly nomeUsuarioAtual = computed(() => this.auth.usuario()?.nome ?? '');
+  readonly rotuloPerfilAtual = computed(() => {
+    const perfil = this.perfil();
+    return perfil ? ROTULOS_PERFIL[perfil] : '';
+  });
   readonly iniciaisUsuarioAtual = computed(() =>
     this.nomeUsuarioAtual()
       .split(' ')
+      .filter(Boolean)
       .map((parte) => parte[0])
       .join(''),
   );
@@ -85,9 +94,8 @@ export class EquipTrackService {
     return this.historico()[pat] ?? [];
   });
 
-  definirPerfil(novoPerfil: PerfilUsuario): void {
-    this.perfil.set(novoPerfil);
-    this.abaAtiva.set(novoPerfil === 'operador' ? 'PAINEL' : 'DISPONÍVEIS');
+  abrirAbaInicial(): void {
+    this.abaAtiva.set(this.ehOperador() ? 'PAINEL' : 'DISPONÍVEIS');
   }
 
   definirEstado(novoEstado: EstadoTela): void {
@@ -120,7 +128,7 @@ export class EquipTrackService {
   cadastrarEquipamento(novo: Equipamento): void {
     this.equipamentos.update((lista) => [novo, ...lista]);
     this.adicionarEvento(novo.patrimonio, {
-      usuario: 'Marina Souza',
+      usuario: this.nomeUsuarioAtual(),
       tipo: 'Equipamento cadastrado',
       observacao: 'Situação inicial definida.',
       badge: novo.situacao,
@@ -133,7 +141,7 @@ export class EquipTrackService {
   aprovarSolicitacao(solicitacao: Solicitacao): void {
     this.atualizarSolicitacao(solicitacao.id, { status: 'APROVADA' });
     this.adicionarEvento(solicitacao.patrimonio, {
-      usuario: 'Marina Souza',
+      usuario: this.nomeUsuarioAtual(),
       tipo: 'Solicitação aprovada',
       observacao: `Aprovada para ${solicitacao.solicitante}. Aguardando retirada.`,
       badge: 'APROVADA',
@@ -150,7 +158,7 @@ export class EquipTrackService {
     this.atualizarSolicitacao(solicitacao.id, { status: 'RETIRADO' });
     this.atualizarEquipamento(solicitacao.patrimonio, { situacao: 'EMPRESTADO' });
     this.adicionarEvento(solicitacao.patrimonio, {
-      usuario: 'Marina Souza',
+      usuario: this.nomeUsuarioAtual(),
       tipo: 'Retirada registrada',
       observacao: `Retirado por ${solicitacao.solicitante}.`,
       badge: 'RETIRADO',
@@ -169,13 +177,13 @@ export class EquipTrackService {
       condicao,
     });
     this.adicionarEvento(solicitacao.patrimonio, {
-      usuario: 'Marina Souza',
+      usuario: this.nomeUsuarioAtual(),
       tipo: 'Devolução registrada',
       observacao: observacao.trim() || 'Sem observações.',
       badge: 'DEVOLVIDO',
     });
     this.adicionarEvento(solicitacao.patrimonio, {
-      usuario: 'Marina Souza',
+      usuario: this.nomeUsuarioAtual(),
       tipo: 'Condição atualizada',
       observacao: `Condição na devolução: ${formatarValorBadge(condicao)}.`,
       badge: condicao,
