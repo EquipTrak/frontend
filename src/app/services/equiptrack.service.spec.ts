@@ -3,8 +3,14 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { errosDoCadastro } from '../components/equipamentos-operador/equipamentos-operador.component';
-import { CategoriaApi, EquipamentoApi, NovoEquipamentoApi } from '../models/api.models';
-import { EquipTrackService } from './equiptrack.service';
+import {
+  CategoriaApi,
+  EquipamentoApi,
+  EventoHistoricoApi,
+  NovoEquipamentoApi,
+} from '../models/api.models';
+import { AuthService } from './auth.service';
+import { EquipTrackService, paraEventoHistorico } from './equiptrack.service';
 
 const CATEGORIAS: CategoriaApi[] = [
   { id: 1, nome: 'Notebook' },
@@ -119,7 +125,8 @@ describe('EquipTrackService (catálogo de equipamentos)', () => {
 
     expect(criado.id).toBe(13);
     expect(service.equipamentos().map((e) => e.patrimonio)).toEqual(['NB-0001', 'NB-0003', 'PJ-0001']);
-    expect(service.historico()['NB-0003']?.length).toBe(1);
+    // O evento de cadastro é gravado pelo backend, não mais na tela.
+    expect(service.historico()['NB-0003']).toBeUndefined();
   });
 
   it('repassa o erro do cadastro sem alterar a lista', async () => {
@@ -135,6 +142,135 @@ describe('EquipTrackService (catálogo de equipamentos)', () => {
 
     await expect(cadastro).rejects.toBeInstanceOf(HttpErrorResponse);
     expect(service.equipamentos().length).toBe(1);
+  });
+});
+
+describe('EquipTrackService (histórico do equipamento)', () => {
+  let service: EquipTrackService;
+  let auth: AuthService;
+  let http: HttpTestingController;
+
+  const CADASTRO: EventoHistoricoApi = {
+    id: 1,
+    dataHora: '2026-11-14T15:30:00Z',
+    tipo: 'CADASTRO',
+    usuario: { id: 2, nome: 'Marina Souza' },
+    situacaoAnterior: null,
+    situacaoNova: 'DISPONIVEL',
+    condicaoAnterior: null,
+    condicaoNova: 'BOA',
+    observacao: 'Situação inicial definida.',
+    emprestimoId: null,
+  };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EquipTrackService);
+    auth = TestBed.inject(AuthService);
+    http = TestBed.inject(HttpTestingController);
+    auth.usuario.set({ id: 2, nome: 'Marina Souza', email: 'm@equiptrack.local', perfil: 'OPERADOR' });
+  });
+
+  afterEach(() => http.verify());
+
+  it('busca o histórico na API ao abrir a gaveta', async () => {
+    service.abrirHistorico('NB-0001');
+    expect(service.estadoHistorico()).toBe('carregando');
+    http.expectOne('/api/equipamentos/NB-0001/historico').flush([CADASTRO]);
+    await Promise.resolve();
+
+    expect(service.estadoHistorico()).toBe('normal');
+    expect(service.eventosHistoricoSelecionado()).toEqual([
+      {
+        data: new Date(CADASTRO.dataHora)
+          .toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+          .replace(',', ''),
+        usuario: 'Marina Souza',
+        tipo: 'Equipamento cadastrado',
+        observacao: 'Situação inicial definida.',
+        badge: 'DISPONIVEL',
+      },
+    ]);
+  });
+
+  it('mostra erro quando a API falha e permite tentar de novo', async () => {
+    service.abrirHistorico('NB-0001');
+    http
+      .expectOne('/api/equipamentos/NB-0001/historico')
+      .flush(null, { status: 500, statusText: 'Erro' });
+    await Promise.resolve();
+    expect(service.estadoHistorico()).toBe('erro');
+
+    const novaTentativa = service.carregarHistorico();
+    http.expectOne('/api/equipamentos/NB-0001/historico').flush([CADASTRO]);
+    await novaTentativa;
+    expect(service.estadoHistorico()).toBe('normal');
+    expect(service.eventosHistoricoSelecionado().length).toBe(1);
+  });
+
+  it('ignora a resposta de um equipamento que já não está aberto', async () => {
+    service.abrirHistorico('NB-0001');
+    const primeira = http.expectOne('/api/equipamentos/NB-0001/historico');
+    service.abrirHistorico('PJ-0001');
+    const segunda = http.expectOne('/api/equipamentos/PJ-0001/historico');
+
+    segunda.flush([]);
+    primeira.flush([CADASTRO]);
+    await Promise.resolve();
+
+    expect(service.patrimonioHistoricoAberto()).toBe('PJ-0001');
+    expect(service.eventosHistoricoSelecionado()).toEqual([]);
+  });
+
+  it('fechar a gaveta limpa os eventos', async () => {
+    service.abrirHistorico('NB-0001');
+    http.expectOne('/api/equipamentos/NB-0001/historico').flush([CADASTRO]);
+    await Promise.resolve();
+
+    service.abrirHistorico(null);
+    expect(service.historicoDaApi()).toEqual([]);
+    expect(service.estadoHistorico()).toBe('normal');
+  });
+
+  it('solicitante não abre o histórico nem chama a API', () => {
+    auth.usuario.set({ id: 3, nome: 'Rafael Lima', email: 'r@equiptrack.local', perfil: 'SOLICITANTE' });
+    service.abrirHistorico('NB-0001');
+
+    expect(service.patrimonioHistoricoAberto()).toBeNull();
+    http.expectNone('/api/equipamentos/NB-0001/historico');
+  });
+});
+
+describe('paraEventoHistorico', () => {
+  const base: EventoHistoricoApi = {
+    id: 1,
+    dataHora: '2026-11-14T15:30:00Z',
+    tipo: 'MUDANCA_CONDICAO',
+    usuario: { id: 2, nome: 'Marina Souza' },
+    situacaoAnterior: null,
+    situacaoNova: null,
+    condicaoAnterior: 'BOA',
+    condicaoNova: 'REGULAR',
+    observacao: null,
+    emprestimoId: null,
+  };
+
+  it('escolhe o rótulo e o selo de cada tipo de evento', () => {
+    expect(paraEventoHistorico(base)).toMatchObject({
+      tipo: 'Condição atualizada',
+      badge: 'REGULAR',
+      observacao: 'Sem observações.',
+    });
+    expect(paraEventoHistorico({ ...base, tipo: 'RETIRADA' }).badge).toBe('RETIRADO');
+    expect(paraEventoHistorico({ ...base, tipo: 'DEVOLUCAO' }).badge).toBe('DEVOLVIDO');
+    expect(
+      paraEventoHistorico({ ...base, tipo: 'MUDANCA_SITUACAO', situacaoNova: 'EM_MANUTENCAO' }),
+    ).toMatchObject({ tipo: 'Situação atualizada', badge: 'EM_MANUTENCAO' });
+    expect(
+      paraEventoHistorico({ ...base, tipo: 'CORRECAO', condicaoNova: null }).badge,
+    ).toBeUndefined();
   });
 });
 
