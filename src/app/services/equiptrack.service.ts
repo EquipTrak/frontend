@@ -20,6 +20,7 @@ import {
   EmprestimoResumoApi,
   EquipamentoApi,
   EventoHistoricoApi,
+  IndicadoresApi,
   NovaSolicitacaoApi,
   NovoEquipamentoApi,
   ROTULOS_PERFIL,
@@ -123,6 +124,8 @@ export class EquipTrackService {
   /** Para o solicitante, as próprias solicitações; para o operador, a fila. As duas vêm da API. */
   readonly solicitacoes = signal<Solicitacao[]>([]);
   readonly estadoSolicitacoes = signal<'normal' | 'carregando' | 'erro'>('normal');
+  /** Totais do painel do operador vindos da API (RF20); nulo enquanto não chegam ou se a API falhar. */
+  readonly indicadoresApi = signal<IndicadoresApi | null>(null);
   /** Eventos do equipamento aberto na gaveta, vindos da API. */
   readonly historicoDaApi = signal<EventoHistorico[]>([]);
   readonly estadoHistorico = signal<'normal' | 'carregando' | 'erro'>('normal');
@@ -148,31 +151,38 @@ export class EquipTrackService {
     this.ehOperador() ? ['PAINEL', 'SOLICITAÇÕES'] : ['DISPONÍVEIS', 'MINHAS SOLICITAÇÕES'],
   );
 
+  /**
+   * Faixa de indicadores. O operador vê os totais da API, que contam todos os empréstimos atrasados.
+   * Sem eles (solicitante, carregando ou erro), os totais são contados nas listas já carregadas.
+   */
   readonly indicadores = computed(() => {
+    const api = this.ehOperador() ? this.indicadoresApi() : null;
     const equips = this.equipamentos();
     const sols = this.solicitacoes();
     return [
       {
         rotulo: 'DISPONÍVEIS',
-        valor: equips.filter((e) => e.situacao === 'DISPONIVEL').length,
+        valor: api?.disponiveis ?? equips.filter((e) => e.situacao === 'DISPONIVEL').length,
         corBarra: 'bg-success',
         destaquePerigo: false,
       },
       {
         rotulo: 'EMPRESTADOS',
-        valor: equips.filter((e) => e.situacao === 'EMPRESTADO').length,
+        valor: api?.emprestados ?? equips.filter((e) => e.situacao === 'EMPRESTADO').length,
         corBarra: 'bg-info',
         destaquePerigo: false,
       },
       {
         rotulo: 'ATRASADOS',
-        valor: sols.filter((s) => s.status === 'ATRASADO').length,
+        valor: api?.atrasados ?? sols.filter((s) => s.status === 'ATRASADO').length,
         corBarra: 'bg-danger',
         destaquePerigo: true,
       },
       {
         rotulo: 'INDISPONÍVEIS',
-        valor: equips.filter((e) => SITUACOES_INDISPONIVEIS.includes(e.situacao)).length,
+        valor:
+          api?.indisponiveis ??
+          equips.filter((e) => SITUACOES_INDISPONIVEIS.includes(e.situacao)).length,
         corBarra: 'bg-neutral',
         destaquePerigo: false,
       },
@@ -242,6 +252,21 @@ export class EquipTrackService {
     return this.equipamentos().find((e) => e.patrimonio === patrimonio);
   }
 
+  /**
+   * Busca os totais do painel (RF20), só para o operador. Se a API falhar, a faixa continua com os
+   * totais contados nas listas carregadas.
+   */
+  async carregarIndicadores(): Promise<void> {
+    if (!this.ehOperador()) return;
+    try {
+      this.indicadoresApi.set(
+        await firstValueFrom(this.http.get<IndicadoresApi>(`${API_URL}/painel/indicadores`)),
+      );
+    } catch {
+      this.indicadoresApi.set(null);
+    }
+  }
+
   /** Busca categorias e equipamentos na API. Em caso de falha, a tela mostra o estado de erro. */
   async carregarCatalogo(): Promise<void> {
     this.estado.set('carregando');
@@ -269,6 +294,7 @@ export class EquipTrackService {
     this.equipamentos.update((lista) =>
       [...lista, novo].sort((a, b) => a.patrimonio.localeCompare(b.patrimonio)),
     );
+    void this.carregarIndicadores();
     // O evento de cadastro é gravado pelo backend e aparece ao abrir o histórico.
     this.toast.success(
       `${novo.patrimonio} cadastrado como ${formatarValorBadge(novo.situacao).toUpperCase()}.`,
@@ -326,6 +352,7 @@ export class EquipTrackService {
     );
     this.substituirSolicitacao(retirada);
     this.atualizarEquipamento(solicitacao.patrimonio, { situacao: 'EMPRESTADO' });
+    void this.carregarIndicadores();
     this.toast.success(`${solicitacao.patrimonio} entregue a ${solicitacao.solicitante}.`);
   }
 
@@ -353,6 +380,7 @@ export class EquipTrackService {
       situacao: condicao === 'COM_AVARIA' ? 'DANIFICADO' : 'DISPONIVEL',
       condicao,
     });
+    void this.carregarIndicadores();
     this.toast.success(
       condicao === 'COM_AVARIA'
         ? `Devolução registrada. ${solicitacao.patrimonio} ficou DANIFICADO até a avaliação.`

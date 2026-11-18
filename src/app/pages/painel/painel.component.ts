@@ -125,6 +125,7 @@ export class PainelComponent implements OnInit {
     this.state.abrirAbaInicial();
     void this.state.carregarCatalogo();
     void this.state.carregarSolicitacoes();
+    void this.state.carregarIndicadores();
   }
 
   formatarNumero(valor: number): string {

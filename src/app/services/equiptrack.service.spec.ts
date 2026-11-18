@@ -11,6 +11,7 @@ import {
   CategoriaApi,
   EquipamentoApi,
   EventoHistoricoApi,
+  IndicadoresApi,
   NovoEquipamentoApi,
   SolicitacaoApi,
 } from '../models/api.models';
@@ -21,6 +22,14 @@ const CATEGORIAS: CategoriaApi[] = [
   { id: 1, nome: 'Notebook' },
   { id: 2, nome: 'Projetor' },
 ];
+
+const INDICADORES: IndicadoresApi = {
+  disponiveis: 3,
+  emprestados: 2,
+  atrasados: 1,
+  indisponiveis: 1,
+  total: 6,
+};
 
 function equipamentoApi(parcial: Partial<EquipamentoApi>): EquipamentoApi {
   return {
@@ -127,6 +136,8 @@ describe('EquipTrackService (catálogo de equipamentos)', () => {
       equipamentoApi({ id: 13, patrimonio: 'NB-0003', descricao: 'Notebook HP', condicao: 'REGULAR' }),
     );
     const criado = await cadastro;
+    // Depois do cadastro, os totais do painel são buscados de novo.
+    http.expectOne('/api/painel/indicadores').flush(INDICADORES);
 
     expect(criado.id).toBe(13);
     expect(service.equipamentos().map((e) => e.patrimonio)).toEqual(['NB-0001', 'NB-0003', 'PJ-0001']);
@@ -145,6 +156,61 @@ describe('EquipTrackService (catálogo de equipamentos)', () => {
 
     await expect(cadastro).rejects.toBeInstanceOf(HttpErrorResponse);
     expect(service.equipamentos().length).toBe(1);
+  });
+});
+
+describe('EquipTrackService (indicadores do painel)', () => {
+  let service: EquipTrackService;
+  let auth: AuthService;
+  let http: HttpTestingController;
+
+  const valores = () => service.indicadores().map((i) => [i.rotulo, i.valor]);
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EquipTrackService);
+    auth = TestBed.inject(AuthService);
+    http = TestBed.inject(HttpTestingController);
+    auth.usuario.set({ id: 2, nome: 'Marina Souza', email: 'm@equiptrack.local', perfil: 'OPERADOR' });
+    // Catálogo com um disponível só, para diferenciar dos totais da API.
+    const catalogo = service.carregarCatalogo();
+    http.expectOne('/api/categorias').flush(CATEGORIAS);
+    http.expectOne('/api/equipamentos').flush([equipamentoApi({})]);
+    await catalogo;
+  });
+
+  afterEach(() => http.verify());
+
+  it('o operador vê os totais da API', async () => {
+    const carga = service.carregarIndicadores();
+    http.expectOne('/api/painel/indicadores').flush(INDICADORES);
+    await carga;
+
+    expect(valores()).toEqual([
+      ['DISPONÍVEIS', 3],
+      ['EMPRESTADOS', 2],
+      ['ATRASADOS', 1],
+      ['INDISPONÍVEIS', 1],
+    ]);
+  });
+
+  it('se a API falhar, conta nas listas carregadas', async () => {
+    const carga = service.carregarIndicadores();
+    http.expectOne('/api/painel/indicadores').flush(null, { status: 500, statusText: 'Erro' });
+    await carga;
+
+    expect(service.indicadoresApi()).toBeNull();
+    expect(valores()[0]).toEqual(['DISPONÍVEIS', 1]);
+  });
+
+  it('o solicitante não chama a API e vê os totais contados nas listas', async () => {
+    auth.usuario.set({ id: 3, nome: 'Rafael Lima', email: 'r@equiptrack.local', perfil: 'SOLICITANTE' });
+    await service.carregarIndicadores();
+
+    http.expectNone('/api/painel/indicadores');
+    expect(valores()[0]).toEqual(['DISPONÍVEIS', 1]);
   });
 });
 
@@ -666,6 +732,7 @@ describe('EquipTrackService (retirada)', () => {
     expect(requisicao.request.body).toBeNull();
     requisicao.flush(aprovada({ emprestimo: EMPRESTIMO }));
     await retirada;
+    http.expectOne('/api/painel/indicadores').flush(INDICADORES);
 
     expect(service.solicitacoes()[0].status).toBe('RETIRADO');
     expect(service.buscarEquipamento('PJ-0001')?.situacao).toBe('EMPRESTADO');
@@ -745,6 +812,7 @@ describe('EquipTrackService (devolução)', () => {
     expect(requisicao.request.body).toEqual({ condicao: 'REGULAR', observacao: 'Risco.' });
     requisicao.flush(retirada('DEVOLVIDO'));
     await devolucao;
+    http.expectOne('/api/painel/indicadores').flush(INDICADORES);
 
     expect(service.solicitacoes()[0].status).toBe('DEVOLVIDO');
     expect(service.buscarEquipamento('PJ-0001')).toMatchObject({
@@ -759,6 +827,7 @@ describe('EquipTrackService (devolução)', () => {
     expect(requisicao.request.body).toEqual({ condicao: 'COM_AVARIA', observacao: null });
     requisicao.flush(retirada('DEVOLVIDO'));
     await devolucao;
+    http.expectOne('/api/painel/indicadores').flush(INDICADORES);
 
     expect(service.buscarEquipamento('PJ-0001')?.situacao).toBe('DANIFICADO');
   });
