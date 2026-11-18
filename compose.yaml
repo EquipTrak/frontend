@@ -1,13 +1,22 @@
+# Só o front-end, em contêiner, apontando para um backend que já roda na SUA MÁQUINA (porta 8080).
+# Para subir tudo junto (MySQL + backend + front), use o compose.yaml do repositório do backend.
+#
+#   docker compose up --build
+#
+# Acesse http://localhost:4200. Este arquivo e o do backend usam a mesma porta: suba um de cada vez.
+
 services:
   web:
     build: .
-    container_name: equiptrack-frontend
     ports:
-      - "4200:4200"
+      - "${FRONTEND_PORT:-4200}:8080"
     environment:
-      - API_URL=http://host.docker.internal:8080
+      # host.docker.internal é a máquina que hospeda o Docker (no Linux, vem do extra_hosts abaixo).
+      API_URL: ${API_URL:-http://host.docker.internal:8080}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - .:/app
-      - /app/node_modules
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

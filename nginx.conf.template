@@ -1,0 +1,68 @@
+# Servidor do front-end em produção. Este arquivo é um template: a imagem o passa por envsubst ao subir e só as
+# variáveis de ambiente (API_URL e NGINX_LOCAL_RESOLVERS) são substituídas (os $uri, $host etc. abaixo são variáveis do próprio nginx).
+
+server {
+    listen 8080;
+    server_name _;
+    server_tokens off;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Cabeçalhos de segurança. Ficam no nível do server e valem para todas as rotas.
+    # Como cada `add_header` dentro de um location apagaria estes, os locations abaixo usam `expires`.
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    # style-src 'unsafe-inline': o Angular injeta os estilos dos componentes. As fontes vêm do Google Fonts
+    # (index.html). O token do usuário fica no sessionStorage, então scripts só podem vir da própria origem.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+
+    gzip on;
+    gzip_min_length 1024;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # Usado pelo health check do Docker. Não depende do backend.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # API: o navegador sempre fala com /api na mesma origem (sem CORS); o nginx repassa ao backend.
+    location /api/ {
+        # O nome do backend é resolvido a cada requisição (DNS do Docker, lido no boot da imagem). Com um
+        # proxy_pass fixo, o nginx nem subiria se o backend ainda não existisse e guardaria o IP para sempre.
+        resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+        set $api_backend "${API_URL}";
+        proxy_pass $api_backend;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+        client_max_body_size 1m;
+
+        proxy_set_header Host $host;
+        # Sobrescreve (não acrescenta) o X-Forwarded-For: o cliente não consegue forjar o próprio IP, que o
+        # backend usa no bloqueio de tentativas de login.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+
+    # Arquivos com hash no nome (main-XXXX.js, styles-XXXX.css) nunca mudam: cache longo.
+    location ~* \.(?:js|css|ico|woff2?|png|svg)$ {
+        expires 1y;
+        try_files $uri =404;
+    }
+
+    # O index.html aponta para os arquivos com hash: nunca pode ficar em cache.
+    location = /index.html {
+        expires -1;
+    }
+
+    # Rotas do Angular (SPA): qualquer caminho que não seja arquivo volta ao index.html.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

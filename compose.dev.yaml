@@ -1,0 +1,20 @@
+# Desenvolvimento do front-end em contêiner: `ng serve` com recarga automática a cada alteração no código.
+# NÃO é para produção (servidor de desenvolvimento). O backend deve estar rodando na sua máquina, na porta 8080.
+#
+#   docker compose -f compose.dev.yaml up --build
+
+services:
+  web:
+    build:
+      context: .
+      target: desenvolvimento
+    ports:
+      - "4200:4200"
+    environment:
+      # Lido pelo proxy.conf.mjs do ng serve.
+      API_URL: http://host.docker.internal:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - .:/app
+      - /app/node_modules
