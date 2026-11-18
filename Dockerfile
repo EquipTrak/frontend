@@ -29,7 +29,7 @@ RUN npx ng build --configuration production
 
 # ---- Produção ----
 # nginx-unprivileged: roda como usuário comum (uid 101) e escuta na porta 8080, sem precisar de privilégios.
-FROM nginxinc/nginx-unprivileged:1.29-alpine AS producao
+FROM nginxinc/nginx-unprivileged:1.31-alpine AS producao
 # Os arquivos em /etc/nginx/templates passam por envsubst quando o contêiner sobe (vira conf.d/default.conf).
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=compilacao /app/dist/equiptrack-frontend/browser /usr/share/nginx/html
