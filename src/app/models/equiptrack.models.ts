@@ -12,6 +12,7 @@ export type StatusSolicitacao =
   | 'RETIRADO'
   | 'DEVOLVIDO'
   | 'REJEITADA'
+  | 'CANCELADA'
   | 'ATRASADO';
 
 export type BadgeValor = CondicaoEquipamento | SituacaoEquipamento | StatusSolicitacao;
@@ -102,6 +103,7 @@ export const BADGE_CONFIG: Record<BadgeValor, ConfiguracaoBadge> = {
   RETIRADO: { texto: 'Retirado', tom: 'info', icone: 'rotate-ccw' },
   DEVOLVIDO: { texto: 'Devolvido', tom: 'success', icone: 'check' },
   REJEITADA: { texto: 'Rejeitada', tom: 'danger', icone: 'x' },
+  CANCELADA: { texto: 'Cancelada', tom: 'neutral', icone: 'x' },
   ATRASADO: { texto: 'Atrasado', tom: 'danger', icone: 'triangle-alert' },
   // Selos de condição: estritamente sem ícones ou símbolos conforme Guia de Design
   OTIMA: { texto: 'Ótima', tom: 'success' },

@@ -18,8 +18,10 @@ import {
   CategoriaApi,
   EquipamentoApi,
   EventoHistoricoApi,
+  NovaSolicitacaoApi,
   NovoEquipamentoApi,
   ROTULOS_PERFIL,
+  SolicitacaoApi,
   TipoEventoApi,
 } from '../models/api.models';
 import { AuthService } from './auth.service';
@@ -50,6 +52,19 @@ const ROTULOS_EVENTO: Record<TipoEventoApi, string> = {
 
 function formatarDataHora(data: Date): string {
   return data.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).replace(',', '');
+}
+
+/** Converte uma solicitação da API para o formato das listas: número com prefixo e datas no fuso do navegador. */
+export function paraSolicitacao(api: SolicitacaoApi): Solicitacao {
+  return {
+    id: `S-${api.id}`,
+    solicitante: api.solicitante.nome,
+    patrimonio: api.equipamento.patrimonio,
+    inicio: formatarDataHora(new Date(api.inicioPrevisto)),
+    fim: formatarDataHora(new Date(api.fimPrevisto)),
+    status: api.status,
+    ...(api.motivoRejeicao ? { motivo: api.motivoRejeicao } : {}),
+  };
 }
 
 /** Converte um evento da API para o formato exibido na gaveta de histórico. */
@@ -85,14 +100,15 @@ export class EquipTrackService {
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
 
-  // Equipamentos, categorias e histórico vêm da API. As solicitações ainda são dados de
-  // demonstração e passam a vir da API nas próximas etapas (ver backend/docs/integracao-frontend.md).
+  // Equipamentos, categorias, histórico e a criação de solicitação usam a API. As listas de
+  // solicitações ainda partem de dados de demonstração e passam a vir da API nas próximas etapas
+  // (ver backend/docs/integracao-frontend.md).
   readonly perfil = computed(() => this.auth.usuario()?.perfil ?? null);
   readonly estado = signal<EstadoTela>('normal');
   readonly categorias = signal<CategoriaApi[]>([]);
   readonly equipamentos = signal<Equipamento[]>([]);
   readonly solicitacoes = signal<Solicitacao[]>([...SOLICITACOES_INICIAIS]);
-  /** Eventos das ações que ainda são locais (solicitações, retirada e devolução), por patrimônio. */
+  /** Eventos das ações que ainda são locais (aprovação, retirada e devolução), por patrimônio. */
   readonly historico = signal<Record<string, EventoHistorico[]>>({});
   /** Eventos do equipamento aberto na gaveta, vindos da API. */
   readonly historicoDaApi = signal<EventoHistorico[]>([]);
@@ -311,32 +327,28 @@ export class EquipTrackService {
     this.toast.success('Devolução registrada.');
   }
 
-  criarSolicitacao(equipamento: Equipamento, inicioIso: string, fimIso: string): void {
-    const id = `S-${Math.floor(200 + Math.random() * 800)}`;
-    const solicitante = this.nomeUsuarioAtual();
-    const inicio = this.formatarDataHoraIso(inicioIso);
-    const fim = this.formatarDataHoraIso(fimIso);
-
-    this.solicitacoes.update((lista) => [
-      {
-        id,
-        solicitante,
-        patrimonio: equipamento.patrimonio,
-        inicio,
-        fim,
-        status: 'PENDENTE',
-      },
-      ...lista,
-    ]);
-
-    this.adicionarEvento(equipamento.patrimonio, {
-      usuario: solicitante,
-      tipo: 'Solicitação criada',
-      observacao: `Período ${inicio} → ${fim}.`,
-      badge: 'PENDENTE',
-    });
-
+  /**
+   * Cria a solicitação pela API (RF08). `inicioLocal` e `fimLocal` vêm do campo datetime-local, no
+   * fuso do navegador, e seguem para a API em ISO-8601 (UTC). Em caso de erro, a exceção segue para
+   * a tela, que mostra as mensagens de cada campo.
+   */
+  async criarSolicitacao(
+    equipamento: Equipamento,
+    inicioLocal: string,
+    fimLocal: string,
+  ): Promise<Solicitacao> {
+    const corpo: NovaSolicitacaoApi = {
+      equipamentoId: equipamento.id,
+      inicioPrevisto: new Date(inicioLocal).toISOString(),
+      fimPrevisto: new Date(fimLocal).toISOString(),
+    };
+    const nova = paraSolicitacao(
+      await firstValueFrom(this.http.post<SolicitacaoApi>(`${API_URL}/solicitacoes`, corpo)),
+    );
+    // A lista "Minhas solicitações" ainda não vem da API; a nova entra no topo até recarregar a página.
+    this.solicitacoes.update((lista) => [nova, ...lista]);
     this.toast.success('Solicitação enviada! Status: PENDENTE.');
+    return nova;
   }
 
   private atualizarSolicitacao(id: string, parcial: Partial<Solicitacao>): void {
@@ -353,10 +365,6 @@ export class EquipTrackService {
 
   private formatarDataHoraAtual(): string {
     return formatarDataHora(new Date());
-  }
-
-  private formatarDataHoraIso(valorIso: string): string {
-    return formatarDataHora(new Date(valorIso));
   }
 }
 

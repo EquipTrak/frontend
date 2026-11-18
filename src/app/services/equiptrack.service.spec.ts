@@ -2,15 +2,17 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { errosDaSolicitacao } from '../components/disponiveis-solicitante/disponiveis-solicitante.component';
 import { errosDoCadastro } from '../components/equipamentos-operador/equipamentos-operador.component';
 import {
   CategoriaApi,
   EquipamentoApi,
   EventoHistoricoApi,
   NovoEquipamentoApi,
+  SolicitacaoApi,
 } from '../models/api.models';
 import { AuthService } from './auth.service';
-import { EquipTrackService, paraEventoHistorico } from './equiptrack.service';
+import { EquipTrackService, paraEventoHistorico, paraSolicitacao } from './equiptrack.service';
 
 const CATEGORIAS: CategoriaApi[] = [
   { id: 1, nome: 'Notebook' },
@@ -287,5 +289,146 @@ describe('errosDoCadastro', () => {
     expect(errosDoCadastro(new HttpErrorResponse({ status: 403 })).geral).toContain('perfil');
     expect(errosDoCadastro(new HttpErrorResponse({ status: 0 })).geral).toContain('servidor');
     expect(errosDoCadastro(new HttpErrorResponse({ status: 500 })).geral).toContain('Não foi possível');
+  });
+});
+
+describe('EquipTrackService (criar solicitação)', () => {
+  let service: EquipTrackService;
+  let http: HttpTestingController;
+
+  const formatar = (iso: string) =>
+    new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).replace(',', '');
+
+  const CRIADA: SolicitacaoApi = {
+    id: 42,
+    solicitante: { id: 7, nome: 'Rafael Lima' },
+    equipamento: { id: 12, patrimonio: 'PJ-0001', descricao: 'Projetor Epson' },
+    dataSolicitacao: '2026-11-15T12:00:00Z',
+    inicioPrevisto: '2026-11-20T12:00:00Z',
+    fimPrevisto: '2026-11-20T15:00:00Z',
+    status: 'PENDENTE',
+    motivoRejeicao: null,
+  };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EquipTrackService);
+    http = TestBed.inject(HttpTestingController);
+    TestBed.inject(AuthService).usuario.set({
+      id: 3,
+      nome: 'Rafael Lima',
+      email: 'r@equiptrack.local',
+      perfil: 'SOLICITANTE',
+    });
+  });
+
+  afterEach(() => http.verify());
+
+  async function carregarProjetor(): Promise<void> {
+    const carregamento = service.carregarCatalogo();
+    http.expectOne('/api/categorias').flush(CATEGORIAS);
+    http
+      .expectOne('/api/equipamentos')
+      .flush([equipamentoApi({ id: 12, patrimonio: 'PJ-0001', prazoMaxHoras: 24 })]);
+    await carregamento;
+  }
+
+  it('envia o id do equipamento e o período em ISO-8601 e põe a solicitação no topo da lista', async () => {
+    await carregarProjetor();
+    const projetor = service.buscarEquipamento('PJ-0001')!;
+    const antes = service.solicitacoes().length;
+
+    const criacao = service.criarSolicitacao(projetor, '2026-11-20T09:00', '2026-11-20T12:00');
+    const requisicao = http.expectOne('/api/solicitacoes');
+    expect(requisicao.request.method).toBe('POST');
+    expect(requisicao.request.body).toEqual({
+      equipamentoId: 12,
+      inicioPrevisto: new Date('2026-11-20T09:00').toISOString(),
+      fimPrevisto: new Date('2026-11-20T12:00').toISOString(),
+    });
+    requisicao.flush(CRIADA);
+    const nova = await criacao;
+
+    expect(nova).toEqual({
+      id: 'S-42',
+      solicitante: 'Rafael Lima',
+      patrimonio: 'PJ-0001',
+      inicio: formatar(CRIADA.inicioPrevisto),
+      fim: formatar(CRIADA.fimPrevisto),
+      status: 'PENDENTE',
+    });
+    expect(service.solicitacoes().length).toBe(antes + 1);
+    expect(service.solicitacoes()[0]).toEqual(nova);
+    // Pedir não muda a situação do equipamento nem cria evento local de histórico.
+    expect(service.buscarEquipamento('PJ-0001')?.situacao).toBe('DISPONIVEL');
+    expect(service.historico()['PJ-0001']).toBeUndefined();
+  });
+
+  it('repassa o erro da API sem alterar a lista', async () => {
+    await carregarProjetor();
+    const antes = service.solicitacoes().length;
+
+    const criacao = service.criarSolicitacao(
+      service.buscarEquipamento('PJ-0001')!,
+      '2026-11-20T09:00',
+      '2026-11-20T12:00',
+    );
+    http
+      .expectOne('/api/solicitacoes')
+      .flush(
+        { status: 409, campos: { equipamentoId: 'Este equipamento não está disponível.' } },
+        { status: 409, statusText: 'Conflict' },
+      );
+
+    await expect(criacao).rejects.toBeInstanceOf(HttpErrorResponse);
+    expect(service.solicitacoes().length).toBe(antes);
+  });
+
+  it('paraSolicitacao leva o motivo da rejeição quando existe', () => {
+    expect(
+      paraSolicitacao({ ...CRIADA, status: 'REJEITADA', motivoRejeicao: 'Em avaliação técnica.' }),
+    ).toMatchObject({ id: 'S-42', status: 'REJEITADA', motivo: 'Em avaliação técnica.' });
+  });
+});
+
+describe('errosDaSolicitacao', () => {
+  it('leva os erros de período para os campos do formulário', () => {
+    const erro = new HttpErrorResponse({
+      status: 400,
+      error: {
+        campos: {
+          inicioPrevisto: 'O início não pode estar no passado.',
+          fimPrevisto: 'O prazo máximo deste equipamento é de 24 horas.',
+        },
+      },
+    });
+    expect(errosDaSolicitacao(erro)).toEqual({
+      ini: 'O início não pode estar no passado.',
+      fim: 'O prazo máximo deste equipamento é de 24 horas.',
+    });
+  });
+
+  it('mostra como erro geral o que não tem campo no formulário', () => {
+    const erro = new HttpErrorResponse({
+      status: 409,
+      error: { campos: { equipamentoId: 'Você já tem uma solicitação pendente para este equipamento.' } },
+    });
+    expect(errosDaSolicitacao(erro)).toEqual({
+      geral: 'Você já tem uma solicitação pendente para este equipamento.',
+    });
+  });
+
+  it('usa a mensagem do backend no 403 e explica falta de conexão e erros inesperados', () => {
+    expect(
+      errosDaSolicitacao(
+        new HttpErrorResponse({ status: 403, error: { mensagem: 'Sua matrícula está inativa.' } }),
+      ).geral,
+    ).toBe('Sua matrícula está inativa.');
+    expect(errosDaSolicitacao(new HttpErrorResponse({ status: 0 })).geral).toContain('servidor');
+    expect(errosDaSolicitacao(new HttpErrorResponse({ status: 500 })).geral).toContain(
+      'Não foi possível',
+    );
   });
 });
