@@ -310,6 +310,7 @@ describe('EquipTrackService (criar solicitação)', () => {
     fimPrevisto: '2026-11-20T15:00:00Z',
     status: 'PENDENTE',
     motivoRejeicao: null,
+    emprestimo: null,
   };
 
   beforeEach(() => {
@@ -410,6 +411,7 @@ describe('EquipTrackService (minhas solicitações)', () => {
     fimPrevisto: '2026-11-20T15:00:00Z',
     status: 'PENDENTE',
     motivoRejeicao: null,
+    emprestimo: null,
     ...parcial,
   });
 
@@ -514,6 +516,7 @@ describe('EquipTrackService (fila do operador)', () => {
     fimPrevisto: '2026-11-20T15:00:00Z',
     status: 'PENDENTE',
     motivoRejeicao: null,
+    emprestimo: null,
     ...parcial,
   });
 
@@ -591,6 +594,103 @@ describe('EquipTrackService (fila do operador)', () => {
 
     await expect(aprovacao).rejects.toBeInstanceOf(HttpErrorResponse);
     expect(service.solicitacoes()[0].status).toBe('PENDENTE');
+  });
+});
+
+describe('EquipTrackService (retirada)', () => {
+  let service: EquipTrackService;
+  let http: HttpTestingController;
+
+  const EMPRESTIMO = {
+    id: 9,
+    status: 'ATIVO' as const,
+    dataRetirada: '2026-11-20T12:05:00Z',
+    dataPrevistaDevolucao: '2026-11-20T15:00:00Z',
+    dataDevolucao: null,
+  };
+
+  const aprovada = (parcial: Partial<SolicitacaoApi> = {}): SolicitacaoApi => ({
+    id: 42,
+    solicitante: { id: 7, nome: 'Rafael Lima' },
+    equipamento: { id: 12, patrimonio: 'PJ-0001', descricao: 'Projetor Epson' },
+    dataSolicitacao: '2026-11-15T12:00:00Z',
+    inicioPrevisto: '2026-11-20T12:00:00Z',
+    fimPrevisto: '2026-11-20T15:00:00Z',
+    status: 'APROVADA',
+    motivoRejeicao: null,
+    emprestimo: null,
+    ...parcial,
+  });
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EquipTrackService);
+    http = TestBed.inject(HttpTestingController);
+    TestBed.inject(AuthService).usuario.set({
+      id: 2,
+      nome: 'Marina Souza',
+      email: 'm@equiptrack.local',
+      perfil: 'OPERADOR',
+    });
+  });
+
+  afterEach(() => http.verify());
+
+  it('combina o status da solicitação com o do empréstimo', () => {
+    expect(paraSolicitacao(aprovada()).status).toBe('APROVADA');
+    expect(paraSolicitacao(aprovada({ emprestimo: EMPRESTIMO }))).toMatchObject({
+      status: 'RETIRADO',
+      emprestimoId: 9,
+    });
+    expect(paraSolicitacao(aprovada({ emprestimo: { ...EMPRESTIMO, status: 'ATRASADO' } })).status).toBe(
+      'ATRASADO',
+    );
+    expect(
+      paraSolicitacao(aprovada({ emprestimo: { ...EMPRESTIMO, status: 'DEVOLVIDO' } })).status,
+    ).toBe('DEVOLVIDO');
+  });
+
+  it('registra a retirada pela API, passa a solicitação a RETIRADO e o equipamento a EMPRESTADO', async () => {
+    const catalogo = service.carregarCatalogo();
+    http.expectOne('/api/categorias').flush(CATEGORIAS);
+    http
+      .expectOne('/api/equipamentos')
+      .flush([equipamentoApi({ id: 12, patrimonio: 'PJ-0001', situacao: 'DISPONIVEL' })]);
+    await catalogo;
+    const fila = service.carregarSolicitacoes();
+    http.expectOne('/api/solicitacoes').flush([aprovada()]);
+    await fila;
+
+    const retirada = service.registrarRetirada(service.solicitacoes()[0]);
+    const requisicao = http.expectOne('/api/solicitacoes/42/retirada');
+    expect(requisicao.request.method).toBe('POST');
+    expect(requisicao.request.body).toBeNull();
+    requisicao.flush(aprovada({ emprestimo: EMPRESTIMO }));
+    await retirada;
+
+    expect(service.solicitacoes()[0].status).toBe('RETIRADO');
+    expect(service.buscarEquipamento('PJ-0001')?.situacao).toBe('EMPRESTADO');
+    // O evento de retirada é gravado pelo backend.
+    expect(service.historico()['PJ-0001']).toBeUndefined();
+  });
+
+  it('repassa o erro da retirada sem alterar a lista nem o equipamento', async () => {
+    const fila = service.carregarSolicitacoes();
+    http.expectOne('/api/solicitacoes').flush([aprovada()]);
+    await fila;
+
+    const retirada = service.registrarRetirada(service.solicitacoes()[0]);
+    http
+      .expectOne('/api/solicitacoes/42/retirada')
+      .flush(
+        { status: 409, mensagem: 'Este equipamento não está disponível para retirada.' },
+        { status: 409, statusText: 'Conflict' },
+      );
+
+    await expect(retirada).rejects.toBeInstanceOf(HttpErrorResponse);
+    expect(service.solicitacoes()[0].status).toBe('APROVADA');
   });
 });
 

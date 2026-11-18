@@ -12,9 +12,11 @@ import {
   formatarValorBadge,
   SITUACOES_INDISPONIVEIS,
   Solicitacao,
+  StatusSolicitacao,
 } from '../models/equiptrack.models';
 import {
   CategoriaApi,
+  EmprestimoResumoApi,
   EquipamentoApi,
   EventoHistoricoApi,
   NovaSolicitacaoApi,
@@ -53,7 +55,16 @@ function formatarDataHora(data: Date): string {
   return data.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).replace(',', '');
 }
 
-/** Converte uma solicitação da API para o formato das listas: número com prefixo e datas no fuso do navegador. */
+const STATUS_DO_EMPRESTIMO: Record<EmprestimoResumoApi['status'], StatusSolicitacao> = {
+  ATIVO: 'RETIRADO',
+  ATRASADO: 'ATRASADO',
+  DEVOLVIDO: 'DEVOLVIDO',
+};
+
+/**
+ * Converte uma solicitação da API para o formato das listas: número com prefixo, datas no fuso do
+ * navegador e um status só, combinando solicitação e empréstimo (divergência 3).
+ */
 export function paraSolicitacao(api: SolicitacaoApi): Solicitacao {
   return {
     id: `S-${api.id}`,
@@ -63,8 +74,9 @@ export function paraSolicitacao(api: SolicitacaoApi): Solicitacao {
     descricaoEquipamento: api.equipamento.descricao,
     inicio: formatarDataHora(new Date(api.inicioPrevisto)),
     fim: formatarDataHora(new Date(api.fimPrevisto)),
-    status: api.status,
+    status: api.emprestimo ? STATUS_DO_EMPRESTIMO[api.emprestimo.status] : api.status,
     ...(api.motivoRejeicao ? { motivo: api.motivoRejeicao } : {}),
+    ...(api.emprestimo ? { emprestimoId: api.emprestimo.id } : {}),
   };
 }
 
@@ -101,8 +113,8 @@ export class EquipTrackService {
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
 
-  // Equipamentos, categorias, histórico e solicitações usam a API. Retirada e devolução ainda são
-  // locais e passam a usar a API na parte 4 (ver backend/docs/integracao-frontend.md).
+  // Equipamentos, categorias, histórico, solicitações e retirada usam a API. A devolução ainda é
+  // local e passa a usar a API na parte 4b (ver backend/docs/integracao-frontend.md).
   readonly perfil = computed(() => this.auth.usuario()?.perfil ?? null);
   readonly estado = signal<EstadoTela>('normal');
   readonly categorias = signal<CategoriaApi[]>([]);
@@ -110,7 +122,7 @@ export class EquipTrackService {
   /** Para o solicitante, as próprias solicitações; para o operador, a fila. As duas vêm da API. */
   readonly solicitacoes = signal<Solicitacao[]>([]);
   readonly estadoSolicitacoes = signal<'normal' | 'carregando' | 'erro'>('normal');
-  /** Eventos das ações que ainda são locais (retirada e devolução), por patrimônio. */
+  /** Eventos das ações que ainda são locais (devolução), por patrimônio. */
   readonly historico = signal<Record<string, EventoHistorico[]>>({});
   /** Eventos do equipamento aberto na gaveta, vindos da API. */
   readonly historicoDaApi = signal<EventoHistorico[]>([]);
@@ -311,15 +323,21 @@ export class EquipTrackService {
     this.solicitacoes.update((lista) => lista.map((item) => (item.id === nova.id ? nova : item)));
   }
 
-  registrarRetirada(solicitacao: Solicitacao): void {
-    this.atualizarSolicitacao(solicitacao.id, { status: 'RETIRADO' });
+  /**
+   * Registra a retirada pela API (RF10). O backend cria o empréstimo, passa o equipamento a EMPRESTADO
+   * e grava o evento no histórico. Em caso de erro, a exceção segue para a tela.
+   */
+  async registrarRetirada(solicitacao: Solicitacao): Promise<void> {
+    const retirada = paraSolicitacao(
+      await firstValueFrom(
+        this.http.post<SolicitacaoApi>(
+          `${API_URL}/solicitacoes/${solicitacao.numero}/retirada`,
+          null,
+        ),
+      ),
+    );
+    this.substituirSolicitacao(retirada);
     this.atualizarEquipamento(solicitacao.patrimonio, { situacao: 'EMPRESTADO' });
-    this.adicionarEvento(solicitacao.patrimonio, {
-      usuario: this.nomeUsuarioAtual(),
-      tipo: 'Retirada registrada',
-      observacao: `Retirado por ${solicitacao.solicitante}.`,
-      badge: 'RETIRADO',
-    });
     this.toast.success(`${solicitacao.patrimonio} entregue a ${solicitacao.solicitante}.`);
   }
 
