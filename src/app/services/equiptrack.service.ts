@@ -1,32 +1,55 @@
+import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
+import { API_URL } from '../api.config';
 import {
   AbaNavegacao,
   CondicaoEquipamento,
   Equipamento,
-  EQUIPAMENTOS_INICIAIS,
   EstadoTela,
   EventoHistorico,
   formatarValorBadge,
   HISTORICO_INICIAL,
+  SITUACOES_INDISPONIVEIS,
   Solicitacao,
   SOLICITACOES_INICIAIS,
 } from '../models/equiptrack.models';
-import { ROTULOS_PERFIL } from '../models/api.models';
+import {
+  CategoriaApi,
+  EquipamentoApi,
+  NovoEquipamentoApi,
+  ROTULOS_PERFIL,
+} from '../models/api.models';
 import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
+
+export function paraEquipamento(api: EquipamentoApi): Equipamento {
+  return {
+    id: api.id,
+    patrimonio: api.patrimonio,
+    descricao: api.descricao,
+    categoria: api.categoria.nome,
+    categoriaId: api.categoria.id,
+    condicao: api.condicao,
+    situacao: api.situacao,
+    prazoMaxHoras: api.prazoMaxHoras,
+  };
+}
 
 @Injectable({
   providedIn: 'root',
 })
 export class EquipTrackService {
+  private readonly http = inject(HttpClient);
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
 
-  // Equipamentos, solicitações e histórico ainda são dados de demonstração:
-  // passam a vir da API nas próximas etapas (ver backend/docs/integracao-frontend.md).
+  // Equipamentos e categorias vêm da API. Solicitações e histórico ainda são dados de
+  // demonstração e passam a vir da API nas próximas etapas (ver backend/docs/integracao-frontend.md).
   readonly perfil = computed(() => this.auth.usuario()?.perfil ?? null);
   readonly estado = signal<EstadoTela>('normal');
-  readonly equipamentos = signal<Equipamento[]>([...EQUIPAMENTOS_INICIAIS]);
+  readonly categorias = signal<CategoriaApi[]>([]);
+  readonly equipamentos = signal<Equipamento[]>([]);
   readonly solicitacoes = signal<Solicitacao[]>([...SOLICITACOES_INICIAIS]);
   readonly historico = signal<Record<string, EventoHistorico[]>>({ ...HISTORICO_INICIAL });
   readonly abaAtiva = signal<AbaNavegacao>('PAINEL');
@@ -75,7 +98,7 @@ export class EquipTrackService {
       },
       {
         rotulo: 'INDISPONÍVEIS',
-        valor: equips.filter((e) => e.situacao === 'INDISPONIVEL').length,
+        valor: equips.filter((e) => SITUACOES_INDISPONIVEIS.includes(e.situacao)).length,
         corBarra: 'bg-neutral',
         destaquePerigo: false,
       },
@@ -125,8 +148,34 @@ export class EquipTrackService {
     }));
   }
 
-  cadastrarEquipamento(novo: Equipamento): void {
-    this.equipamentos.update((lista) => [novo, ...lista]);
+  /** Busca categorias e equipamentos na API. Em caso de falha, a tela mostra o estado de erro. */
+  async carregarCatalogo(): Promise<void> {
+    this.estado.set('carregando');
+    try {
+      const [categorias, equipamentos] = await Promise.all([
+        firstValueFrom(this.http.get<CategoriaApi[]>(`${API_URL}/categorias`)),
+        firstValueFrom(this.http.get<EquipamentoApi[]>(`${API_URL}/equipamentos`)),
+      ]);
+      this.categorias.set(categorias);
+      this.equipamentos.set(equipamentos.map(paraEquipamento));
+      this.estado.set('normal');
+    } catch {
+      this.estado.set('erro');
+    }
+  }
+
+  /**
+   * Cadastra pela API. Em caso de erro, a exceção (HttpErrorResponse com ErroApi) segue para a
+   * tela, que mostra as mensagens de cada campo.
+   */
+  async cadastrarEquipamento(dados: NovoEquipamentoApi): Promise<Equipamento> {
+    const novo = paraEquipamento(
+      await firstValueFrom(this.http.post<EquipamentoApi>(`${API_URL}/equipamentos`, dados)),
+    );
+    this.equipamentos.update((lista) =>
+      [...lista, novo].sort((a, b) => a.patrimonio.localeCompare(b.patrimonio)),
+    );
+    // O histórico ainda é local; passa a vir da API na etapa da gaveta de histórico.
     this.adicionarEvento(novo.patrimonio, {
       usuario: this.nomeUsuarioAtual(),
       tipo: 'Equipamento cadastrado',
@@ -136,6 +185,7 @@ export class EquipTrackService {
     this.toast.success(
       `${novo.patrimonio} cadastrado como ${formatarValorBadge(novo.situacao).toUpperCase()}.`,
     );
+    return novo;
   }
 
   aprovarSolicitacao(solicitacao: Solicitacao): void {
@@ -173,7 +223,7 @@ export class EquipTrackService {
   ): void {
     this.atualizarSolicitacao(solicitacao.id, { status: 'DEVOLVIDO' });
     this.atualizarEquipamento(solicitacao.patrimonio, {
-      situacao: condicao === 'COM_AVARIA' ? 'INDISPONIVEL' : 'DISPONIVEL',
+      situacao: condicao === 'COM_AVARIA' ? 'DANIFICADO' : 'DISPONIVEL',
       condicao,
     });
     this.adicionarEvento(solicitacao.patrimonio, {

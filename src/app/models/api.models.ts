@@ -32,3 +32,33 @@ export interface ErroApi {
   caminho: string;
   campos?: Record<string, string>;
 }
+
+// Equipamentos e categorias (ver backend/docs/integracao-frontend.md, parte 2).
+
+export interface CategoriaApi {
+  id: number;
+  nome: string;
+}
+
+export interface EquipamentoApi {
+  id: number;
+  patrimonio: string;
+  descricao: string;
+  categoria: CategoriaApi;
+  marca: string | null;
+  modelo: string | null;
+  numeroSerie: string | null;
+  condicao: 'OTIMA' | 'BOA' | 'REGULAR' | 'COM_AVARIA';
+  situacao: 'DISPONIVEL' | 'EMPRESTADO' | 'DANIFICADO' | 'EM_MANUTENCAO';
+  prazoMaxHoras: number;
+}
+
+/** Corpo de POST /api/equipamentos. */
+export interface NovoEquipamentoApi {
+  patrimonio: string;
+  categoriaId: number;
+  descricao: string;
+  condicao: EquipamentoApi['condicao'];
+  situacao: Exclude<EquipamentoApi['situacao'], 'EMPRESTADO'>;
+  prazoMaxHoras: number;
+}

@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { CATEGORIAS, Equipamento } from '../../models/equiptrack.models';
+import { Equipamento } from '../../models/equiptrack.models';
 import { EquipTrackService } from '../../services/equiptrack.service';
 import { BotaoDirective, ChipFiltroComponent } from '../ui/botao.component';
 import { CampoComponent, InputDirective } from '../ui/campo.component';
@@ -58,12 +58,12 @@ interface ErrosSolicitacao {
           <app-chip-filtro [ativo]="!categoriaFiltro()" (selecionar)="categoriaFiltro.set('')">
             Todas
           </app-chip-filtro>
-          @for (cat of categorias; track cat) {
+          @for (cat of state.categorias(); track cat.id) {
             <app-chip-filtro
-              [ativo]="categoriaFiltro() === cat"
-              (selecionar)="categoriaFiltro.set(cat)"
+              [ativo]="categoriaFiltro() === cat.nome"
+              (selecionar)="categoriaFiltro.set(cat.nome)"
             >
-              {{ cat }}
+              {{ cat.nome }}
             </app-chip-filtro>
           }
         </div>
@@ -74,7 +74,7 @@ interface ErrosSolicitacao {
           <app-estado-carregando />
         }
         @case ('erro') {
-          <app-estado-erro (tentarNovamente)="state.definirEstado('normal')" />
+          <app-estado-erro (tentarNovamente)="state.carregarCatalogo()" />
         }
         @case ('vazio') {
           <app-estado-vazio
@@ -178,7 +178,6 @@ interface ErrosSolicitacao {
 })
 export class DisponiveisSolicitanteComponent {
   readonly state = inject(EquipTrackService);
-  readonly categorias = CATEGORIAS;
 
   readonly termoBusca = signal<string>('');
   readonly categoriaFiltro = signal<string>('');
