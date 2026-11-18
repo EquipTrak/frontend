@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    name: Build e testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build de produção
+        run: npm run build
+      - name: Testes
+        run: npm test -- --watch=false
+      - name: Vulnerabilidades em dependências de produção
+        run: npm audit --omit=dev --audit-level=high
+
+  imagem:
+    name: Imagem Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construir a imagem de produção do front
+        run: docker build --tag equiptrack-frontend:ci .

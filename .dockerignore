@@ -6,3 +6,7 @@ dist
 *.iml
 .vscode
 npm-debug.log
+.github
+compose*.yaml
+Dockerfile
+*.md
