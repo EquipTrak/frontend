@@ -124,6 +124,7 @@ export class PainelComponent implements OnInit {
     this.title.setTitle('Painel — EquipTrack');
     this.state.abrirAbaInicial();
     void this.state.carregarCatalogo();
+    void this.state.carregarSolicitacoes();
   }
 
   formatarNumero(valor: number): string {

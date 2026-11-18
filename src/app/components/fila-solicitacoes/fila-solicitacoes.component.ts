@@ -1,5 +1,7 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ErroApi } from '../../models/api.models';
 import {
   AbaFilaSolicitacoes,
   AbaSituacaoEquipamento,
@@ -9,6 +11,7 @@ import {
   Solicitacao,
 } from '../../models/equiptrack.models';
 import { EquipTrackService } from '../../services/equiptrack.service';
+import { ToastService } from '../../services/toast.service';
 import { BotaoDirective } from '../ui/botao.component';
 import { CampoComponent, SelectDirective } from '../ui/campo.component';
 import {
@@ -21,6 +24,30 @@ import { IconComponent } from '../ui/icon.component';
 import { ModalComponent } from '../ui/modal.component';
 import { PainelCardComponent } from '../ui/painel-card.component';
 import { SeloComponent } from '../ui/selo.component';
+
+/** Traduz a resposta de erro da aprovação ou da rejeição para a mensagem exibida. */
+export function erroDaDecisao(erro: unknown, padrao: string): string {
+  if (erro instanceof HttpErrorResponse) {
+    const corpo = erro.error as Partial<ErroApi> | null;
+    // 400 da rejeição: o motivo vem em campos.motivo.
+    const doCampo = corpo?.campos?.['motivo'];
+    if (erro.status === 400 && doCampo) return doCampo;
+    // 409: deixou de estar pendente, período sobreposto (RN13), equipamento indisponível ou
+    // solicitante bloqueado. 404 e 403 também trazem o motivo.
+    if ((erro.status === 409 || erro.status === 404 || erro.status === 403) && corpo?.mensagem) {
+      return corpo.mensagem;
+    }
+    if (erro.status === 0) {
+      return 'Não foi possível falar com o servidor. Tente novamente.';
+    }
+  }
+  return padrao;
+}
+
+/** A lista mudou no servidor desde que foi carregada e precisa ser buscada de novo. */
+function listaDesatualizada(erro: unknown): boolean {
+  return erro instanceof HttpErrorResponse && (erro.status === 409 || erro.status === 404);
+}
 
 @Component({
   selector: 'app-fila-solicitacoes',
@@ -96,18 +123,12 @@ import { SeloComponent } from '../ui/selo.component';
         }
       </div>
 
-      @switch (state.estado()) {
+      @switch (estadoTela()) {
         @case ('carregando') {
           <app-estado-carregando />
         }
         @case ('erro') {
-          <app-estado-erro (tentarNovamente)="state.definirEstado('normal')" />
-        }
-        @case ('vazio') {
-          <app-estado-vazio
-            titulo="Fila vazia"
-            texto="Nenhuma solicitação nesta etapa por enquanto."
-          />
+          <app-estado-erro (tentarNovamente)="tentarNovamente()" />
         }
         @default {
           @if (abaSituacaoAtiva()) {
@@ -172,7 +193,10 @@ import { SeloComponent } from '../ui/selo.component';
                           <span class="font-mono text-accent-text">{{ s.patrimonio }}</span>
                           {{ ' ' }}
                           <span class="text-muted-foreground">
-                            {{ state.buscarEquipamento(s.patrimonio)?.descricao }}
+                            {{
+                              s.descricaoEquipamento ??
+                                state.buscarEquipamento(s.patrimonio)?.descricao
+                            }}
                           </span>
                         </p>
                         <p class="mt-0.5 text-xs text-muted-foreground">
@@ -188,15 +212,17 @@ import { SeloComponent } from '../ui/selo.component';
                           type="button"
                           appBotao
                           tamanho="pequeno"
-                          (click)="state.aprovarSolicitacao(s)"
+                          [disabled]="aprovandoId() === s.id"
+                          (click)="aprovar(s)"
                         >
-                          Aprovar
+                          {{ aprovandoId() === s.id ? 'Aprovando…' : 'Aprovar' }}
                         </button>
                         <button
                           type="button"
                           appBotao
                           tamanho="pequeno"
                           variant="secundario"
+                          [disabled]="aprovandoId() === s.id"
                           (click)="abrirModalRejeitar(s)"
                         >
                           Rejeitar
@@ -236,7 +262,7 @@ import { SeloComponent } from '../ui/selo.component';
     <app-modal
       [aberto]="!!solicitacaoParaRejeitar()"
       titulo="Rejeitar solicitação"
-      (fechar)="solicitacaoParaRejeitar.set(null)"
+      (fechar)="fecharModalRejeitar()"
     >
       <p class="mb-4 text-sm text-muted-foreground">
         {{ solicitacaoParaRejeitar()?.solicitante }} ·
@@ -245,11 +271,12 @@ import { SeloComponent } from '../ui/selo.component';
       <app-campo
         id="motivo"
         label="Motivo da rejeição"
-        [erro]="erroMotivoRejeicao() ? 'O motivo é obrigatório.' : undefined"
+        [erro]="erroMotivoRejeicao() || undefined"
       >
         <textarea
           id="motivo"
           rows="3"
+          maxlength="255"
           [ngModel]="motivoRejeicao()"
           (ngModelChange)="motivoRejeicao.set($event)"
           [class]="
@@ -258,18 +285,28 @@ import { SeloComponent } from '../ui/selo.component';
           "
         ></textarea>
       </app-campo>
+      @if (erroRejeicao()) {
+        <p class="mt-3 text-sm text-danger" role="alert">{{ erroRejeicao() }}</p>
+      }
 
       <ng-container rodape>
         <button
           type="button"
           appBotao
           variant="fantasma"
-          (click)="solicitacaoParaRejeitar.set(null)"
+          [disabled]="rejeitando()"
+          (click)="fecharModalRejeitar()"
         >
           Cancelar
         </button>
-        <button type="button" appBotao variant="perigo" (click)="confirmarRejeicao()">
-          Rejeitar
+        <button
+          type="button"
+          appBotao
+          variant="perigo"
+          [disabled]="rejeitando()"
+          (click)="confirmarRejeicao()"
+        >
+          {{ rejeitando() ? 'Rejeitando…' : 'Rejeitar' }}
         </button>
       </ng-container>
     </app-modal>
@@ -398,6 +435,7 @@ import { SeloComponent } from '../ui/selo.component';
 })
 export class FilaSolicitacoesComponent {
   readonly state = inject(EquipTrackService);
+  private readonly toast = inject(ToastService);
 
   readonly abasStatus: AbaFilaSolicitacoes[] = ['Pendentes', 'Aprovadas', 'Em uso', 'Atrasados'];
   readonly abasSituacao: AbaSituacaoEquipamento[] = [
@@ -411,7 +449,15 @@ export class FilaSolicitacoesComponent {
 
   readonly solicitacaoParaRejeitar = signal<Solicitacao | null>(null);
   readonly motivoRejeicao = signal<string>('');
-  readonly erroMotivoRejeicao = signal<boolean>(false);
+  readonly erroMotivoRejeicao = signal<string>('');
+  readonly erroRejeicao = signal<string>('');
+  readonly rejeitando = signal<boolean>(false);
+  readonly aprovandoId = signal<string | null>(null);
+
+  /** As abas de solicitação seguem a lista de solicitações; as de situação, o catálogo. */
+  readonly estadoTela = computed(() =>
+    this.abaSituacaoAtiva() ? this.state.estado() : this.state.estadoSolicitacoes(),
+  );
 
   readonly solicitacaoParaRetirada = signal<Solicitacao | null>(null);
   readonly patrimonioBloqueado = signal<string | null>(null);
@@ -447,21 +493,65 @@ export class FilaSolicitacoesComponent {
     return this.state.equipamentos().filter((e) => situacoes.includes(e.situacao)).length;
   }
 
+  tentarNovamente(): void {
+    if (this.abaSituacaoAtiva()) {
+      void this.state.carregarCatalogo();
+    } else {
+      void this.state.carregarSolicitacoes();
+    }
+  }
+
+  async aprovar(solicitacao: Solicitacao): Promise<void> {
+    if (this.aprovandoId()) return;
+    this.aprovandoId.set(solicitacao.id);
+    try {
+      await this.state.aprovarSolicitacao(solicitacao);
+    } catch (erro) {
+      this.toast.error(erroDaDecisao(erro, 'Não foi possível aprovar a solicitação. Tente novamente.'), 6000);
+      if (listaDesatualizada(erro)) void this.state.carregarSolicitacoes();
+    } finally {
+      this.aprovandoId.set(null);
+    }
+  }
+
   abrirModalRejeitar(solicitacao: Solicitacao): void {
     this.solicitacaoParaRejeitar.set(solicitacao);
     this.motivoRejeicao.set('');
-    this.erroMotivoRejeicao.set(false);
+    this.erroMotivoRejeicao.set('');
+    this.erroRejeicao.set('');
   }
 
-  confirmarRejeicao(): void {
+  fecharModalRejeitar(): void {
+    if (this.rejeitando()) return;
+    this.solicitacaoParaRejeitar.set(null);
+  }
+
+  async confirmarRejeicao(): Promise<void> {
     const s = this.solicitacaoParaRejeitar();
-    if (!s) return;
-    if (!this.motivoRejeicao().trim()) {
-      this.erroMotivoRejeicao.set(true);
+    if (!s || this.rejeitando()) return;
+    const motivo = this.motivoRejeicao().trim();
+    this.erroRejeicao.set('');
+    if (!motivo) {
+      this.erroMotivoRejeicao.set('O motivo é obrigatório.');
       return;
     }
-    this.state.rejeitarSolicitacao(s, this.motivoRejeicao().trim());
-    this.solicitacaoParaRejeitar.set(null);
+    this.erroMotivoRejeicao.set('');
+
+    this.rejeitando.set(true);
+    try {
+      await this.state.rejeitarSolicitacao(s, motivo);
+      this.solicitacaoParaRejeitar.set(null);
+    } catch (erro) {
+      const mensagem = erroDaDecisao(erro, 'Não foi possível rejeitar a solicitação. Tente novamente.');
+      if (erro instanceof HttpErrorResponse && erro.status === 400) {
+        this.erroMotivoRejeicao.set(mensagem);
+      } else {
+        this.erroRejeicao.set(mensagem);
+      }
+      if (listaDesatualizada(erro)) void this.state.carregarSolicitacoes();
+    } finally {
+      this.rejeitando.set(false);
+    }
   }
 
   iniciarRegistroRetirada(solicitacao: Solicitacao): void {

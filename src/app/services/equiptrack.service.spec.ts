@@ -4,6 +4,8 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { errosDaSolicitacao } from '../components/disponiveis-solicitante/disponiveis-solicitante.component';
 import { errosDoCadastro } from '../components/equipamentos-operador/equipamentos-operador.component';
+import { erroDaDecisao } from '../components/fila-solicitacoes/fila-solicitacoes.component';
+import { erroDoCancelamento } from '../components/minhas-solicitacoes/minhas-solicitacoes.component';
 import {
   CategoriaApi,
   EquipamentoApi,
@@ -353,8 +355,10 @@ describe('EquipTrackService (criar solicitação)', () => {
 
     expect(nova).toEqual({
       id: 'S-42',
+      numero: 42,
       solicitante: 'Rafael Lima',
       patrimonio: 'PJ-0001',
+      descricaoEquipamento: 'Projetor Epson',
       inicio: formatar(CRIADA.inicioPrevisto),
       fim: formatar(CRIADA.fimPrevisto),
       status: 'PENDENTE',
@@ -390,6 +394,240 @@ describe('EquipTrackService (criar solicitação)', () => {
     expect(
       paraSolicitacao({ ...CRIADA, status: 'REJEITADA', motivoRejeicao: 'Em avaliação técnica.' }),
     ).toMatchObject({ id: 'S-42', status: 'REJEITADA', motivo: 'Em avaliação técnica.' });
+  });
+});
+
+describe('EquipTrackService (minhas solicitações)', () => {
+  let service: EquipTrackService;
+  let http: HttpTestingController;
+
+  const solicitacaoApi = (parcial: Partial<SolicitacaoApi>): SolicitacaoApi => ({
+    id: 42,
+    solicitante: { id: 7, nome: 'Rafael Lima' },
+    equipamento: { id: 12, patrimonio: 'PJ-0001', descricao: 'Projetor Epson' },
+    dataSolicitacao: '2026-11-15T12:00:00Z',
+    inicioPrevisto: '2026-11-20T12:00:00Z',
+    fimPrevisto: '2026-11-20T15:00:00Z',
+    status: 'PENDENTE',
+    motivoRejeicao: null,
+    ...parcial,
+  });
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EquipTrackService);
+    http = TestBed.inject(HttpTestingController);
+    TestBed.inject(AuthService).usuario.set({
+      id: 3,
+      nome: 'Rafael Lima',
+      email: 'r@equiptrack.local',
+      perfil: 'SOLICITANTE',
+    });
+  });
+
+  afterEach(() => http.verify());
+
+  async function carregar(lista: SolicitacaoApi[]): Promise<void> {
+    const carregamento = service.carregarSolicitacoes();
+    http.expectOne('/api/solicitacoes/minhas').flush(lista);
+    await carregamento;
+  }
+
+  it('busca a lista do solicitante, na ordem recebida', async () => {
+    const carregamento = service.carregarSolicitacoes();
+    expect(service.estadoSolicitacoes()).toBe('carregando');
+    expect(service.solicitacoes()).toEqual([]);
+    http
+      .expectOne('/api/solicitacoes/minhas')
+      .flush([
+        solicitacaoApi({ id: 43, equipamento: { id: 10, patrimonio: 'NB-0001', descricao: 'Notebook Dell' } }),
+        solicitacaoApi({ id: 42, status: 'REJEITADA', motivoRejeicao: 'Reservado para aula.' }),
+      ]);
+    await carregamento;
+
+    expect(service.estadoSolicitacoes()).toBe('normal');
+    expect(service.solicitacoes().map((s) => s.id)).toEqual(['S-43', 'S-42']);
+    expect(service.solicitacoes()[0]).toMatchObject({
+      numero: 43,
+      patrimonio: 'NB-0001',
+      descricaoEquipamento: 'Notebook Dell',
+      status: 'PENDENTE',
+    });
+    expect(service.solicitacoes()[1]).toMatchObject({
+      status: 'REJEITADA',
+      motivo: 'Reservado para aula.',
+    });
+  });
+
+  it('mostra o estado de erro quando a API falha e permite tentar de novo', async () => {
+    const carregamento = service.carregarSolicitacoes();
+    http.expectOne('/api/solicitacoes/minhas').flush(null, { status: 500, statusText: 'Erro' });
+    await carregamento;
+    expect(service.estadoSolicitacoes()).toBe('erro');
+    expect(service.solicitacoes()).toEqual([]);
+
+    await carregar([solicitacaoApi({})]);
+    expect(service.estadoSolicitacoes()).toBe('normal');
+    expect(service.solicitacoes().length).toBe(1);
+  });
+
+  it('cancela pela API e atualiza o status na lista', async () => {
+    await carregar([solicitacaoApi({ id: 43 }), solicitacaoApi({ id: 42 })]);
+
+    const cancelamento = service.cancelarSolicitacao(service.solicitacoes()[1]);
+    const requisicao = http.expectOne('/api/solicitacoes/42/cancelamento');
+    expect(requisicao.request.method).toBe('POST');
+    requisicao.flush(solicitacaoApi({ id: 42, status: 'CANCELADA' }));
+    await cancelamento;
+
+    expect(service.solicitacoes().map((s) => s.status)).toEqual(['PENDENTE', 'CANCELADA']);
+  });
+
+  it('repassa o erro do cancelamento sem alterar a lista', async () => {
+    await carregar([solicitacaoApi({})]);
+
+    const cancelamento = service.cancelarSolicitacao(service.solicitacoes()[0]);
+    http
+      .expectOne('/api/solicitacoes/42/cancelamento')
+      .flush(
+        { status: 409, mensagem: 'Só é possível cancelar uma solicitação pendente.' },
+        { status: 409, statusText: 'Conflict' },
+      );
+
+    await expect(cancelamento).rejects.toBeInstanceOf(HttpErrorResponse);
+    expect(service.solicitacoes()[0].status).toBe('PENDENTE');
+  });
+});
+
+describe('EquipTrackService (fila do operador)', () => {
+  let service: EquipTrackService;
+  let http: HttpTestingController;
+
+  const solicitacaoApi = (parcial: Partial<SolicitacaoApi>): SolicitacaoApi => ({
+    id: 42,
+    solicitante: { id: 7, nome: 'Rafael Lima' },
+    equipamento: { id: 12, patrimonio: 'PJ-0001', descricao: 'Projetor Epson' },
+    dataSolicitacao: '2026-11-15T12:00:00Z',
+    inicioPrevisto: '2026-11-20T12:00:00Z',
+    fimPrevisto: '2026-11-20T15:00:00Z',
+    status: 'PENDENTE',
+    motivoRejeicao: null,
+    ...parcial,
+  });
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EquipTrackService);
+    http = TestBed.inject(HttpTestingController);
+    TestBed.inject(AuthService).usuario.set({
+      id: 2,
+      nome: 'Marina Souza',
+      email: 'm@equiptrack.local',
+      perfil: 'OPERADOR',
+    });
+  });
+
+  afterEach(() => http.verify());
+
+  async function carregarFila(lista: SolicitacaoApi[]): Promise<void> {
+    const carregamento = service.carregarSolicitacoes();
+    http.expectOne('/api/solicitacoes').flush(lista);
+    await carregamento;
+  }
+
+  it('o operador busca a fila completa', async () => {
+    await carregarFila([
+      solicitacaoApi({ id: 1 }),
+      solicitacaoApi({ id: 2, solicitante: { id: 8, nome: 'Beatriz Alves' }, status: 'APROVADA' }),
+    ]);
+
+    expect(service.estadoSolicitacoes()).toBe('normal');
+    expect(service.solicitacoes().map((s) => [s.id, s.solicitante, s.status])).toEqual([
+      ['S-1', 'Rafael Lima', 'PENDENTE'],
+      ['S-2', 'Beatriz Alves', 'APROVADA'],
+    ]);
+  });
+
+  it('aprova pela API sem corpo e atualiza a lista, sem evento local de histórico', async () => {
+    await carregarFila([solicitacaoApi({})]);
+
+    const aprovacao = service.aprovarSolicitacao(service.solicitacoes()[0]);
+    const requisicao = http.expectOne('/api/solicitacoes/42/aprovacao');
+    expect(requisicao.request.method).toBe('POST');
+    expect(requisicao.request.body).toBeNull();
+    requisicao.flush(solicitacaoApi({ status: 'APROVADA' }));
+    await aprovacao;
+
+    expect(service.solicitacoes()[0].status).toBe('APROVADA');
+    expect(service.historico()['PJ-0001']).toBeUndefined();
+  });
+
+  it('rejeita pela API com o motivo', async () => {
+    await carregarFila([solicitacaoApi({})]);
+
+    const rejeicao = service.rejeitarSolicitacao(service.solicitacoes()[0], 'Reservado para aula.');
+    const requisicao = http.expectOne('/api/solicitacoes/42/rejeicao');
+    expect(requisicao.request.body).toEqual({ motivo: 'Reservado para aula.' });
+    requisicao.flush(solicitacaoApi({ status: 'REJEITADA', motivoRejeicao: 'Reservado para aula.' }));
+    await rejeicao;
+
+    expect(service.solicitacoes()[0]).toMatchObject({
+      status: 'REJEITADA',
+      motivo: 'Reservado para aula.',
+    });
+  });
+
+  it('repassa o erro da aprovação sem alterar a lista', async () => {
+    await carregarFila([solicitacaoApi({})]);
+
+    const aprovacao = service.aprovarSolicitacao(service.solicitacoes()[0]);
+    http
+      .expectOne('/api/solicitacoes/42/aprovacao')
+      .flush({ status: 409, mensagem: 'Período sobreposto.' }, { status: 409, statusText: 'Conflict' });
+
+    await expect(aprovacao).rejects.toBeInstanceOf(HttpErrorResponse);
+    expect(service.solicitacoes()[0].status).toBe('PENDENTE');
+  });
+});
+
+describe('erroDaDecisao', () => {
+  it('usa o erro do campo motivo no 400 e a mensagem do backend em 409, 404 e 403', () => {
+    expect(
+      erroDaDecisao(
+        new HttpErrorResponse({ status: 400, error: { campos: { motivo: 'Informe o motivo da rejeição.' } } }),
+        'padrão',
+      ),
+    ).toBe('Informe o motivo da rejeição.');
+    expect(
+      erroDaDecisao(
+        new HttpErrorResponse({ status: 409, error: { mensagem: 'Esta solicitação não está mais pendente.' } }),
+        'padrão',
+      ),
+    ).toBe('Esta solicitação não está mais pendente.');
+  });
+
+  it('explica falta de conexão e usa o texto padrão nos demais casos', () => {
+    expect(erroDaDecisao(new HttpErrorResponse({ status: 0 }), 'padrão')).toContain('servidor');
+    expect(erroDaDecisao(new HttpErrorResponse({ status: 500 }), 'padrão')).toBe('padrão');
+  });
+});
+
+describe('erroDoCancelamento', () => {
+  it('usa a mensagem do backend em 409, 404 e 403', () => {
+    const erro = new HttpErrorResponse({
+      status: 409,
+      error: { mensagem: 'Só é possível cancelar uma solicitação pendente.' },
+    });
+    expect(erroDoCancelamento(erro)).toBe('Só é possível cancelar uma solicitação pendente.');
+  });
+
+  it('explica falta de conexão e erros inesperados', () => {
+    expect(erroDoCancelamento(new HttpErrorResponse({ status: 0 }))).toContain('servidor');
+    expect(erroDoCancelamento(new HttpErrorResponse({ status: 500 }))).toContain('Não foi possível');
   });
 });
 
