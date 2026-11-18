@@ -11,15 +11,9 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import {
-  AbaNavegacao,
-  Equipamento,
-  EstadoTela,
-  Solicitacao,
-} from '../../models/equiptrack.models';
+import { AbaNavegacao, Equipamento, Solicitacao } from '../../models/equiptrack.models';
 import { EquipTrackService } from '../../services/equiptrack.service';
 import { BotaoDirective } from '../ui/botao.component';
-import { SelectDirective } from '../ui/campo.component';
 import { EstadoVazioComponent } from '../ui/estados-visuais.component';
 import { IconComponent } from '../ui/icon.component';
 import { BrandLogoComponent } from '../ui/mascote-logo.component';
@@ -154,14 +148,7 @@ export class BuscaRapidaComponent implements AfterViewInit {
 @Component({
   selector: 'app-topbar',
   standalone: true,
-  imports: [
-    FormsModule,
-    BrandLogoComponent,
-    IconComponent,
-    BotaoDirective,
-    SelectDirective,
-    BuscaRapidaComponent,
-  ],
+  imports: [BrandLogoComponent, IconComponent, BotaoDirective, BuscaRapidaComponent],
   template: `
     <header class="sticky top-0 z-30 shrink-0 border-b border-border bg-topbar">
       <div class="flex h-16 items-center gap-6 px-4 lg:px-6">
@@ -196,19 +183,6 @@ export class BuscaRapidaComponent implements AfterViewInit {
         </div>
 
         <div class="ml-auto flex items-center gap-2 md:ml-0">
-          <select
-            appSelect
-            aria-label="Estado da tela (protótipo)"
-            extraClass="hidden !min-h-8 w-auto py-0 text-xs xl:block"
-            [ngModel]="state.estado()"
-            (ngModelChange)="aoMudarEstado($event)"
-          >
-            <option value="normal">Estado: normal</option>
-            <option value="carregando">Estado: carregando</option>
-            <option value="vazio">Estado: vazio</option>
-            <option value="erro">Estado: erro</option>
-          </select>
-
           <div class="relative hidden sm:block">
             <button
               type="button"
@@ -313,18 +287,6 @@ export class BuscaRapidaComponent implements AfterViewInit {
               <span class="text-muted-foreground"> · {{ state.rotuloPerfilAtual() }}</span>
             </p>
 
-            <select
-              appSelect
-              aria-label="Estado da tela (protótipo)"
-              [ngModel]="state.estado()"
-              (ngModelChange)="aoMudarEstado($event)"
-            >
-              <option value="normal">Estado: normal</option>
-              <option value="carregando">Estado: carregando</option>
-              <option value="vazio">Estado: vazio</option>
-              <option value="erro">Estado: erro</option>
-            </select>
-
             <button
               type="button"
               appBotao
@@ -356,9 +318,5 @@ export class TopbarComponent {
   irParaMobile(aba: AbaNavegacao): void {
     this.state.irParaAba(aba);
     this.menuMobileAberto.set(false);
-  }
-
-  aoMudarEstado(novoEstado: EstadoTela): void {
-    this.state.definirEstado(novoEstado);
   }
 }
