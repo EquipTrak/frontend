@@ -8,7 +8,7 @@
 # repassa para a variável API_URL, lida quando o contêiner sobe. A mesma imagem serve a qualquer ambiente.
 
 # ---- Dependências (camada reaproveitada enquanto o package-lock não mudar) ----
-FROM node:22-alpine AS dependencias
+FROM node:26-alpine AS dependencias
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
