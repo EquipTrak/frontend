@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { errosDaSolicitacao } from '../components/disponiveis-solicitante/disponiveis-solicitante.component';
+import { erroDaDevolucao } from '../components/fila-solicitacoes/fila-solicitacoes.component';
 import { errosDoCadastro } from '../components/equipamentos-operador/equipamentos-operador.component';
 import { erroDaDecisao } from '../components/fila-solicitacoes/fila-solicitacoes.component';
 import { erroDoCancelamento } from '../components/minhas-solicitacoes/minhas-solicitacoes.component';
@@ -129,8 +130,6 @@ describe('EquipTrackService (catálogo de equipamentos)', () => {
 
     expect(criado.id).toBe(13);
     expect(service.equipamentos().map((e) => e.patrimonio)).toEqual(['NB-0001', 'NB-0003', 'PJ-0001']);
-    // O evento de cadastro é gravado pelo backend, não mais na tela.
-    expect(service.historico()['NB-0003']).toBeUndefined();
   });
 
   it('repassa o erro do cadastro sem alterar a lista', async () => {
@@ -366,9 +365,8 @@ describe('EquipTrackService (criar solicitação)', () => {
     });
     expect(service.solicitacoes().length).toBe(antes + 1);
     expect(service.solicitacoes()[0]).toEqual(nova);
-    // Pedir não muda a situação do equipamento nem cria evento local de histórico.
+    // Pedir não muda a situação do equipamento.
     expect(service.buscarEquipamento('PJ-0001')?.situacao).toBe('DISPONIVEL');
-    expect(service.historico()['PJ-0001']).toBeUndefined();
   });
 
   it('repassa o erro da API sem alterar a lista', async () => {
@@ -555,7 +553,7 @@ describe('EquipTrackService (fila do operador)', () => {
     ]);
   });
 
-  it('aprova pela API sem corpo e atualiza a lista, sem evento local de histórico', async () => {
+  it('aprova pela API sem corpo e atualiza a lista', async () => {
     await carregarFila([solicitacaoApi({})]);
 
     const aprovacao = service.aprovarSolicitacao(service.solicitacoes()[0]);
@@ -566,7 +564,6 @@ describe('EquipTrackService (fila do operador)', () => {
     await aprovacao;
 
     expect(service.solicitacoes()[0].status).toBe('APROVADA');
-    expect(service.historico()['PJ-0001']).toBeUndefined();
   });
 
   it('rejeita pela API com o motivo', async () => {
@@ -672,8 +669,6 @@ describe('EquipTrackService (retirada)', () => {
 
     expect(service.solicitacoes()[0].status).toBe('RETIRADO');
     expect(service.buscarEquipamento('PJ-0001')?.situacao).toBe('EMPRESTADO');
-    // O evento de retirada é gravado pelo backend.
-    expect(service.historico()['PJ-0001']).toBeUndefined();
   });
 
   it('repassa o erro da retirada sem alterar a lista nem o equipamento', async () => {
@@ -691,6 +686,116 @@ describe('EquipTrackService (retirada)', () => {
 
     await expect(retirada).rejects.toBeInstanceOf(HttpErrorResponse);
     expect(service.solicitacoes()[0].status).toBe('APROVADA');
+  });
+});
+
+describe('EquipTrackService (devolução)', () => {
+  let service: EquipTrackService;
+  let http: HttpTestingController;
+
+  const retirada = (status: 'ATIVO' | 'DEVOLVIDO'): SolicitacaoApi => ({
+    id: 42,
+    solicitante: { id: 7, nome: 'Rafael Lima' },
+    equipamento: { id: 12, patrimonio: 'PJ-0001', descricao: 'Projetor Epson' },
+    dataSolicitacao: '2026-11-15T12:00:00Z',
+    inicioPrevisto: '2026-11-20T12:00:00Z',
+    fimPrevisto: '2026-11-20T15:00:00Z',
+    status: 'APROVADA',
+    motivoRejeicao: null,
+    emprestimo: {
+      id: 9,
+      status,
+      dataRetirada: '2026-11-20T12:05:00Z',
+      dataPrevistaDevolucao: '2026-11-20T15:00:00Z',
+      dataDevolucao: status === 'DEVOLVIDO' ? '2026-11-20T14:00:00Z' : null,
+    },
+  });
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EquipTrackService);
+    http = TestBed.inject(HttpTestingController);
+    TestBed.inject(AuthService).usuario.set({
+      id: 2,
+      nome: 'Marina Souza',
+      email: 'm@equiptrack.local',
+      perfil: 'OPERADOR',
+    });
+    const catalogo = service.carregarCatalogo();
+    http.expectOne('/api/categorias').flush(CATEGORIAS);
+    http
+      .expectOne('/api/equipamentos')
+      .flush([equipamentoApi({ id: 12, patrimonio: 'PJ-0001', situacao: 'EMPRESTADO' })]);
+    await catalogo;
+    const fila = service.carregarSolicitacoes();
+    http.expectOne('/api/solicitacoes').flush([retirada('ATIVO')]);
+    await fila;
+  });
+
+  afterEach(() => http.verify());
+
+  it('envia a condição e a observação para o empréstimo e atualiza lista e equipamento', async () => {
+    expect(service.solicitacoes()[0]).toMatchObject({ status: 'RETIRADO', emprestimoId: 9 });
+
+    const devolucao = service.registrarDevolucao(service.solicitacoes()[0], 'REGULAR', '  Risco.  ');
+    const requisicao = http.expectOne('/api/emprestimos/9/devolucao');
+    expect(requisicao.request.method).toBe('POST');
+    expect(requisicao.request.body).toEqual({ condicao: 'REGULAR', observacao: 'Risco.' });
+    requisicao.flush(retirada('DEVOLVIDO'));
+    await devolucao;
+
+    expect(service.solicitacoes()[0].status).toBe('DEVOLVIDO');
+    expect(service.buscarEquipamento('PJ-0001')).toMatchObject({
+      situacao: 'DISPONIVEL',
+      condicao: 'REGULAR',
+    });
+  });
+
+  it('com avaria, o equipamento fica DANIFICADO; observação vazia vai como nula', async () => {
+    const devolucao = service.registrarDevolucao(service.solicitacoes()[0], 'COM_AVARIA', '   ');
+    const requisicao = http.expectOne('/api/emprestimos/9/devolucao');
+    expect(requisicao.request.body).toEqual({ condicao: 'COM_AVARIA', observacao: null });
+    requisicao.flush(retirada('DEVOLVIDO'));
+    await devolucao;
+
+    expect(service.buscarEquipamento('PJ-0001')?.situacao).toBe('DANIFICADO');
+  });
+
+  it('repassa o erro da devolução sem alterar lista nem equipamento', async () => {
+    const devolucao = service.registrarDevolucao(service.solicitacoes()[0], 'BOA', '');
+    http
+      .expectOne('/api/emprestimos/9/devolucao')
+      .flush(
+        { status: 409, mensagem: 'A devolução deste empréstimo já foi registrada.' },
+        { status: 409, statusText: 'Conflict' },
+      );
+
+    await expect(devolucao).rejects.toBeInstanceOf(HttpErrorResponse);
+    expect(service.solicitacoes()[0].status).toBe('RETIRADO');
+    expect(service.buscarEquipamento('PJ-0001')?.situacao).toBe('EMPRESTADO');
+  });
+});
+
+describe('erroDaDevolucao', () => {
+  it('lê os erros dos campos da devolução e cai na regra geral nos demais casos', () => {
+    expect(
+      erroDaDevolucao(
+        new HttpErrorResponse({
+          status: 400,
+          error: { campos: { observacao: 'A observação pode ter até 500 caracteres.' } },
+        }),
+        'padrão',
+      ),
+    ).toBe('A observação pode ter até 500 caracteres.');
+    expect(
+      erroDaDevolucao(
+        new HttpErrorResponse({ status: 409, error: { mensagem: 'Já registrada.' } }),
+        'padrão',
+      ),
+    ).toBe('Já registrada.');
+    expect(erroDaDevolucao(new HttpErrorResponse({ status: 500 }), 'padrão')).toBe('padrão');
   });
 });
 
